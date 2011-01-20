@@ -482,7 +482,7 @@ def main():
                 update_link()
             elif 'PostMsg' in query:
                 post_msg(query)
-    except Exception as e:
+    except:
         print 'Content-Type: text/plain'
         print ''
         traceback.print_exc(file=sys.stdout)
