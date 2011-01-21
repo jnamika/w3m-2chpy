@@ -102,25 +102,33 @@ def print_board_list():
     print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
     print '</head>'
     print '<body>'
-    print '[<a href="file:/%s?PrintBoardList=reload">Reload BoardList</a>]' % \
-            cgi_script
-    print '<br>'
+    print ('[<a href="file:/%s?PrintBoardList=reload">'
+            'Reload BoardList</a>]<br>' % cgi_script)
+    columns = 5
+    print '<table><tr><td colspan=%d>' % columns
     print 'Click to jump to each of the categories.'
-    print '<table><tr>'
+    print '</td></tr><tr>'
     for idx, item in enumerate(categories):
-        if (idx + 1) % 5 == 0:
+        if (idx + 1) % columns == 0:
             print '</tr><tr>'
         print '<td><a href=#%d>%s</a></td>' % (idx, item)
     print '</tr></table><hr>'
     p = re.compile(r_thread_list_url + r'\/([^ ]*)\/')
     for idx, item in enumerate(categories):
-        print '<br><b><a name=%d>%s</a></b><br>' % (idx, item)
+        print '<table>'
+        print '<tr><td colspan=%d>' % columns
+        print '<b><a name=%d>%s</a></b></td></tr><tr>' % (idx, item)
+        n = 0
         for link in [x for x in links if x[2] == item]:
             m = p.match(link[0])
             if m != None:
+                n += 1
+                if n % columns == 0:
+                    print '</tr><tr>'
                 bbs = m.group(1)
-                print '<a href="file:/%s?PrintThreadList=%s">%s</a><br>' % \
-                        (cgi_script, bbs, link[1])
+                print ('<td><a href="file:/%s?PrintThreadList=%s">%s</a>' %
+                        (cgi_script, bbs, link[1]) + '</td>')
+        print '</tr></table>'
     print '</body></html>'
 
 def get_thread_list(bbs, url=None):
@@ -164,19 +172,33 @@ def get_thread_list(bbs, url=None):
             f.close()
     return thread_list
 
-def print_thread_header(bbs, key, thread_name, newlines=None, retrieve=True):
-    if newlines != None:
-        add = '[%d]' % newlines
+def print_thread_header(bbs, key, thread_name, new_num=None, old_num=None,
+        retrieve=True):
+    if new_num != None and old_num != None:
+        newlines = '[%d]' % (new_num - old_num)
     else:
-        add = ''
+        newlines = ''
+    if new_num != None:
+        d = float((int(time.time()) - int(key))) / (3600 * 24)
+        act = float(new_num) / d
+        act = 0 if act < 0 else act
+        activity = '<%.1f>' % act
+    else:
+        activity = ''
     if retrieve:
         func = 'PrintThread'
     else:
         func = 'PrintThreadLog'
     t = time.localtime(int(key))
     st = time.strftime('%Y/%m/%d %H:%M:%S', t)
-    print '%s <a href="file:/%s?%s=%s/%s/">%s%s</a><br>' % (st, cgi_script,
-            func, bbs, key, thread_name, add)
+    print '<tr>'
+    print '<td nowrap><a href="file:/%s?%s=%s/%s/">%s</a></td>' % (cgi_script,
+            func, bbs, key, thread_name)
+    print '<td nowrap align=right>(%d)</td>' % new_num
+    print '<td nowrap align=right>%s</td>' % newlines
+    print '<td nowrap align=right>%s</td>' % activity
+    print '<td nowrap>&nbsp;%s</td>' % st
+    print '</tr>'
 
 def print_thread_list(bbs):
     categories, links = get_bbsmenu()
@@ -193,34 +215,55 @@ def print_thread_list(bbs):
     print '<body>'
     print '[<a href="file:/%s?UpdateLink=on">Update Link</a>]' % cgi_script
     print '<h1>%s</h1>' % board_name
-    p = re.compile(r'.*\(([0-9]+)\)$')
+    print '<table>'
+    p = re.compile(r'\(([0-9]+)\)$')
     q = re.compile(r'\.dat$')
-    for n, x in enumerate(thread_list):
+    for x in thread_list:
+        new_num = int(p.search(x[1]).group(1))
+        old_num = None
         if x[0] in thread_log:
-            old_num = int(p.match(thread_log[x[0]]).group(1))
-            new_num = int(p.match(x[1]).group(1))
-            newlines = new_num - old_num
-        else:
-            newlines = None
-        print_thread_header(bbs, q.sub('', x[0]), x[1], newlines=newlines)
-        if ((n+1) % 10 == 0):
-            print '<br>'
-    print '<br><hr><p>Delisted threads</p>'
+            old_num = int(p.search(thread_log[x[0]]).group(1))
+        print_thread_header(bbs, q.sub('', x[0]), p.sub('', x[1]), new_num,
+                old_num)
+    print '<tr><td colspan=5><hr></td></tr>'
+    print '<tr><td colspan=5><p>Delisted threads</p></td></tr>'
     files = [x[0] for x in thread_list]
-    n = 0
     for k, v in thread_log.iteritems():
         if k not in files:
-            print_thread_header(bbs, q.sub('', k), v, retrieve=False)
-            n += 1
-            if (n % 10 == 0):
-                print '<br>'
+            num = int(p.search(v).group(1))
+            print_thread_header(bbs, q.sub('', k), p.sub('', v), num,
+                    retrieve=False)
+    print '</table>'
     print '</body>'
     print '</html>'
 
+def get_reference(dat):
+    p = re.compile(r'([0-9]+)-?([0-9]*)')
+    ref = {}
+    for i, str in enumerate(dat):
+        v = str.split('<>')
+        idx = i + 1
+        s = v[3].split('&gt;&gt;')
+        for x in s[1:]:
+            m = p.match(x)
+            if m:
+                start = int(m.group(1))
+                if m.group(2):
+                    stop = int(m.group(2)) + 1
+                else:
+                    stop = start + 1
+                for k in xrange(start, stop):
+                    if k not in ref:
+                        ref[k] = [idx]
+                    else:
+                        ref[k].append(idx)
+    return ref
+
 def dat2html(dat):
-    p = re.compile(r'<a href="?[^"]*/[0-9]+"? target="?_blank"?>' + \
-            r'&gt;&gt;([0-9]+)</a>')
+    p = re.compile(r'<a href="?[^"]*/[0-9]+-?[0-9]*"? target="?_blank"?>'
+            r'&gt;&gt;(([0-9]+)-?([0-9]*))</a>')
     q = re.compile(r'(' + r_thread_url + r'\/([^ ]*))')
+    ref = get_reference(dat)
     html = []
     for i, str in enumerate(dat):
         v = str.split('<>')
@@ -228,25 +271,21 @@ def dat2html(dat):
         s = []
         s.append('<p><dt><a name=%d>%d:</a>' % (idx, idx))
         s.append('<a href="mailto:%s">%s</a>' % (v[1], v[0]))
-        s.append('&nbsp; [ %s ] &nbsp;' % v[1])
-        s.append('%s</dt><dd>' % v[2])
-        msg = p.sub(r'<a href=#\1 target=_blank>&gt;&gt;\1</a>', v[3])
-        msg = q.sub(r'[<a href="file:/%s?PrintThread=\2">*</a>]\1' % \
-                cgi_script, msg)
+        s.append('&nbsp; [ %s ] &nbsp;%s' % (v[1], v[2]))
+        if idx in ref:
+            r = ref[idx]
+            s.append('Ref:&gt;&gt;<a href=#%d>%d</a>' % (r[0], r[0]))
+            for x in r[1:]:
+                s.append(',<a href=#%d>%d</a>' % (x, x))
+        s.append('</dt><dd>')
+        msg = p.sub(r'<a href=#\2>&gt;&gt;\1</a>', v[3])
+        msg = (q.sub(r'[<a href="file:/%s?PrintThread=\2">*</a>]\1' %
+            cgi_script, msg))
         s.append('%s</dd></p>' % msg)
         html.append(''.join(s))
     return html
 
-def print_thread(item, retrieve=True):
-    bbs, key, indices = item.split('/')
-    categories, links = get_bbsmenu()
-    url, board_name = get_board_url(bbs, links)
-    orig_url = re.sub(r'\/%s' % bbs, '', url) + 'test/read.cgi/%s/%s/' % (bbs,
-            key)
-    dir = '%s/%s' % (cache_dir, bbs)
-    if not os.path.isdir(dir):
-        os.mkdir(dir)
-    file = '%s/%s.dat' % (dir, key)
+def get_dat(url, file, retrieve):
     try:
         f = codecs.open(file, 'r', encode_2ch)
         dat = unicode(f.read()).splitlines()
@@ -258,7 +297,7 @@ def print_thread(item, retrieve=True):
         old_num = 0
     if retrieve:
         try:
-            urllib.urlretrieve('%s/dat/%s.dat' % (url, key), file)
+            urllib.urlretrieve(url, file)
             f = codecs.open(file, 'r', encode_2ch)
             if unicode(f.readline()).count('<>') != 4:
                 raise
@@ -276,6 +315,20 @@ def print_thread(item, retrieve=True):
             f.write('\n'.join(dat))
             f.close()
     new_num = len(dat)
+    return dat, new_num, old_num
+
+def print_thread(item, retrieve=True):
+    bbs, key, indices = item.split('/')
+    categories, links = get_bbsmenu()
+    url, board_name = get_board_url(bbs, links)
+    orig_url = re.sub(r'\/%s' % bbs, '', url) + 'test/read.cgi/%s/%s/' % (bbs,
+            key)
+    dir = '%s/%s' % (cache_dir, bbs)
+    if not os.path.isdir(dir):
+        os.mkdir(dir)
+    file = '%s/%s.dat' % (dir, key)
+    dat, new_num, old_num = get_dat('%s/dat/%s.dat' % (url, key), file,
+            retrieve)
     if new_num == 0 or dat[0].count('<>') != 4:
         print 'Content-Type: text/html'
         print 'w3m-control: MARK_URL'
@@ -294,6 +347,8 @@ def print_thread(item, retrieve=True):
             print 'w3m-control: GOTO #%d' % int(m.group(1))
         elif n != None:
             print 'w3m-control: GOTO #%d' % (new_num - int(n.group(1)))
+        else:
+            print 'w3m-control: GOTO #1'
     elif old_num != new_num:
         print 'w3m-control: GOTO #%d' % (old_num + 1)
     else:
@@ -305,10 +360,10 @@ def print_thread(item, retrieve=True):
     print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
     print '<title>%s</title></head>' % thread_name
     print '<body>'
-    thread_menu = '[<a href="file:/%s?PrintThreadList=%s">Thread list</a>]' % \
-            (cgi_script, bbs)
-    thread_menu +='[<a href="file:/%s?DeleteDat=%s/%s/">Delete dat</a>]' % \
-            (cgi_script, bbs, key)
+    thread_menu = ('[<a href="file:/%s?PrintThreadList=%s">Thread list</a>]' %
+            (cgi_script, bbs))
+    thread_menu += ('[<a href="file:/%s?DeleteDat=%s/%s/">Delete dat</a>]' %
+            (cgi_script, bbs, key))
     print thread_menu
     print '<br><hr>'
     print '<h1>%s</h1>' % thread_name
@@ -381,8 +436,9 @@ def print_headline(type='news'):
         f.close()
     except:
         print 'w3m-control: GOTO %s' % url
+        print 'w3m-control: DELETE_PREVBUF'
         return
-    p = re.compile(r'^\t')
+    p = re.compile(r'^(\t|<)')
     q = re.compile(r'(.*)<a href=' + r_thread_url + r'\/([^ ]*)>(.*)')
     print 'Content-Type: text/html'
     print ''
@@ -391,7 +447,7 @@ def print_headline(type='news'):
     print '</head>'
     print '<body>'
     print '[<a href="file:/%s?UpdateLink=on">Update Link</a>]<br>' % cgi_script
-    n = 0
+    print '<table>'
     for line in html.splitlines():
         if not p.match(line):
             m = q.match(line)
@@ -399,11 +455,13 @@ def print_headline(type='news'):
                 time = m.group(1)
                 item = m.group(2)
                 title = m.group(3)
-                print '%s<a href="file:/%s?PrintThread=%s">%s</a><br>' % \
-                        (time, cgi_script, item, title)
-                n += 1
-                if (n % 10 == 0):
-                    print '<br>'
+                print '<tr>'
+                print '<td nowrap>%s</td>' % time
+                print ('<td nowrap><a href="file:/%s?PrintThread=%s">' %
+                        (cgi_script, item))
+                print '%s</a><td>' % title
+                print '</tr>'
+    print '</table>'
     print '</body></html>'
 
 def update_link():
@@ -428,7 +486,7 @@ def post_msg(query):
     else:
         cj = cookielib.CookieJar()
         opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-        req = urllib2.Request(base_url)
+        req = urllib2.Request(base_url) # get cookie
         req.add_header("Referer", referer)
         req.add_header("User-agent", user_agent)
         res = opener.open(req)
