@@ -132,7 +132,15 @@ def print_board_list():
     print '</body></html>'
 
 def get_thread_list(bbs, url=None):
+    p = re.compile(r'\.dat$')
+    q = re.compile(r'\(([0-9]+)\)$')
     if url:
+        def splitter(x):
+            x = x.split('<>')
+            key = p.sub('', x[0])
+            thread_name = q.sub('', x[1])
+            num = int(q.search(x[1]).group(1))
+            return (key, thread_name, num)
         dir = '%s/%s' % (cache_dir, bbs)
         if not os.path.isdir(dir):
             os.mkdir(dir)
@@ -142,7 +150,7 @@ def get_thread_list(bbs, url=None):
             f = codecs.open(file, 'r', encode_2ch)
             thread_list = unicode(f.read()).splitlines()
             f.close()
-            thread_list = map(lambda x: tuple(x.split('<>')), thread_list)
+            thread_list = map(splitter, thread_list)
         except:
             thread_list = []
     else:
@@ -153,16 +161,16 @@ def get_thread_list(bbs, url=None):
             thread_list = cPickle.load(f)
             f.close()
         else:
-            p = re.compile(r'^[0-9]+\.dat')
+            r = re.compile(r'^[0-9]+\.dat')
             thread_list = []
-            for file in [x for x in os.listdir(dir) if p.match(x)]:
+            for file in [x for x in os.listdir(dir) if r.match(x)]:
                 try:
                     f = codecs.open('%s/%s' % (dir, file), 'r', encode_2ch)
                     s = unicode(f.read()).splitlines()
                     f.close()
+                    key = p.sub('', file)
                     thread_name = s[0].split('<>')[4]
-                    thread_list.append((file, '%s (%d)' % (thread_name,
-                        len(s))))
+                    thread_list.append((key, thread_name, len(s)))
                 except:
                     pass
             if not os.path.isdir(dir):
@@ -178,7 +186,7 @@ def print_thread_header(bbs, key, thread_name, new_num=None, old_num=None,
         newlines = '[%d]' % (new_num - old_num)
     else:
         newlines = ''
-    if new_num != None:
+    if new_num != None and retrieve:
         d = float((int(time.time()) - int(key))) / (3600 * 24)
         act = float(new_num) / d
         act = 0 if act < 0 else act
@@ -200,12 +208,35 @@ def print_thread_header(bbs, key, thread_name, new_num=None, old_num=None,
     print '<td nowrap>&nbsp;%s</td>' % st
     print '</tr>'
 
-def print_thread_list(bbs):
+def get_sorted_thread_list(thread_list, thread_log, sort_type, reverse):
+    if sort_type == 'res':
+        thread_list.sort(lambda x, y: -cmp(x[2],y[2]))
+        thread_log.sort(lambda x, y: -cmp(x[2],y[2]))
+    elif sort_type == 'num':
+        keys = [x[0] for x in thread_log]
+        tmp = [x for x in thread_list if x[0] in keys]
+        tmp = [(x[0], x[1], x[2], x[2] - thread_log[keys.index(x[0])][2]) for x
+                in tmp]
+        tmp.sort(lambda x, y: -cmp(x[3],y[3]))
+        thread_list = tmp + [x for x in thread_list if x[0] not in keys]
+    elif sort_type == 'act':
+        t = time.time()
+        f = lambda x, y: x / (t - float(y))
+        thread_list.sort(lambda x, y: -cmp(f(x[2], x[0]), f(y[2], y[0])))
+    elif sort_type == 'time':
+        thread_list.sort(lambda x, y: -cmp(int(x[0]),int(y[0])))
+        thread_log.sort(lambda x, y: -cmp(int(x[0]),int(y[0])))
+    if sort_type and reverse:
+        thread_list.reverse()
+        thread_log.reverse()
+    return thread_list, thread_log
+
+def print_thread_list(bbs, sort_type=None, reverse=False):
     categories, links = get_bbsmenu()
     url, board_name = get_board_url(bbs, links)
     url = '%s/subject.txt' % url
     thread_list = get_thread_list(bbs, url)
-    thread_log = dict(get_thread_list(bbs, None))
+    thread_log = get_thread_list(bbs, None)
     print 'Content-Type: text/html'
     print ''
     print '<html><head>'
@@ -215,24 +246,29 @@ def print_thread_list(bbs):
     print '<body>'
     print '[<a href="file:/%s?UpdateLink=on">Update Link</a>]' % cgi_script
     print '<h1>%s</h1>' % board_name
+    thread_list, thread_log = get_sorted_thread_list(thread_list, thread_log,
+            sort_type, reverse)
     print '<table>'
-    p = re.compile(r'\(([0-9]+)\)$')
-    q = re.compile(r'\.dat$')
+    print '<tr><td></td>'
+    for type in ['res', 'num', 'act', 'time']:
+        s = 'file:/%s?PrintThreadList=%s' % (cgi_script, bbs)
+        print '<td nowrap align=center>'
+        print '[<a href="%s&sort=%s">+</a>]' % (s, type)
+        print '[<a href="%s&sort=%s&reverse=on">-</a>]' % (s, type)
+        print '</td>'
+    print '</tr>'
+    keys = [x[0] for x in thread_log]
     for x in thread_list:
-        new_num = int(p.search(x[1]).group(1))
         old_num = None
-        if x[0] in thread_log:
-            old_num = int(p.search(thread_log[x[0]]).group(1))
-        print_thread_header(bbs, q.sub('', x[0]), p.sub('', x[1]), new_num,
-                old_num)
+        if x[0] in keys:
+            old_num = thread_log[keys.index(x[0])][2]
+        print_thread_header(bbs, x[0], x[1], x[2], old_num)
     print '<tr><td colspan=5><hr></td></tr>'
     print '<tr><td colspan=5><p>Delisted threads</p></td></tr>'
-    files = [x[0] for x in thread_list]
-    for k, v in thread_log.iteritems():
-        if k not in files:
-            num = int(p.search(v).group(1))
-            print_thread_header(bbs, q.sub('', k), p.sub('', v), num,
-                    retrieve=False)
+    keys = [x[0] for x in thread_list]
+    for x in thread_log:
+        if x[0] not in keys:
+            print_thread_header(bbs, x[0], x[1], x[2], retrieve=False)
     print '</table>'
     print '</body>'
     print '</html>'
@@ -259,11 +295,31 @@ def get_reference(dat):
                         ref[k].append(idx)
     return ref
 
+def get_id_reference(dat):
+    p = re.compile(r'ID:([^:]+)$')
+    ref = {}
+    for i, str in enumerate(dat):
+        v = str.split('<>')
+        idx = i + 1
+        m = p.search(v[2])
+        if m:
+            id = m.group(1)
+            if id in ref:
+                ref[id].append(idx)
+            else:
+                ref[id] = [idx]
+    id_ref = {}
+    for k, v in ref.iteritems():
+        for idx in v:
+            id_ref[idx] = [x for x in v if x != idx]
+    return id_ref
+
 def dat2html(dat):
     p = re.compile(r'<a href="?[^"]*/[0-9]+-?[0-9]*"? target="?_blank"?>'
             r'&gt;&gt;(([0-9]+)-?([0-9]*))</a>')
     q = re.compile(r'(' + r_thread_url + r'\/([^ ]*))')
     ref = get_reference(dat)
+    id_ref = get_id_reference(dat)
     html = []
     for i, str in enumerate(dat):
         v = str.split('<>')
@@ -272,9 +328,15 @@ def dat2html(dat):
         s.append('<p><dt><a name=%d>%d:</a>' % (idx, idx))
         s.append('<a href="mailto:%s">%s</a>' % (v[1], v[0]))
         s.append('&nbsp; [ %s ] &nbsp;%s' % (v[1], v[2]))
+        if idx in id_ref and len(id_ref[idx]) > 0:
+            r = id_ref[idx]
+            s.append('[<a href=#%d>%d</a>' % (r[0], r[0]))
+            for x in r[1:]:
+                s.append(',<a href=#%d>%d</a>' % (x, x))
+            s.append(']')
         if idx in ref:
             r = ref[idx]
-            s.append('Ref:&gt;&gt;<a href=#%d>%d</a>' % (r[0], r[0]))
+            s.append(' Ref:&gt;&gt;<a href=#%d>%d</a>' % (r[0], r[0]))
             for x in r[1:]:
                 s.append(',<a href=#%d>%d</a>' % (x, x))
         s.append('</dt><dd>')
@@ -395,12 +457,9 @@ def print_thread(item, retrieve=True):
     print '<input type=hidden name=time value=%d>' % int(time.time())
     print '</form><br><br>'
     print '</body></html>'
-    filename = '%s.dat' % key
     thread_log = get_thread_list(bbs, None)
-    for n, x in enumerate(thread_log):
-        if x[0] == filename:
-            thread_log.pop(n)
-    thread_log.insert(0, (filename, '%s (%d)' % (thread_name, new_num)))
+    thread_log = [x for x in thread_log if x[0] != key]
+    thread_log.insert(0, (key, thread_name, new_num))
     cache_file = '%s/subject.cache' % dir
     f = open(cache_file, 'w')
     cPickle.dump(thread_log, f)
@@ -414,11 +473,8 @@ def delete_datfile(item):
     dir = '%s/%s' % (cache_dir, bbs)
     cache_file = '%s/subject.cache' % dir
     if os.path.isfile(cache_file):
-        filename = '%s.dat' % key
         thread_log = get_thread_list(bbs, None)
-        for n, x in enumerate(thread_log):
-            if x[0] == filename:
-                thread_log.pop(n)
+        thread_log = [x for x in thread_log if x[0] != key]
         f = open(cache_file, 'w')
         cPickle.dump(thread_log, f)
         f.close()
@@ -520,7 +576,11 @@ def main():
                 print_board_list()
             elif 'PrintThreadList' in query:
                 bbs = cgi.escape(query['PrintThreadList'])
-                print_thread_list(bbs)
+                sort_type = (cgi.escape(query['sort']) if 'sort' in query else
+                        None)
+                reverse = (cgi.escape(query['reverse']) if 'reverse' in query
+                        else None)
+                print_thread_list(bbs, sort_type, reverse)
             elif 'PrintThread' in query:
                 item = cgi.escape(query['PrintThread'])
                 print_thread(item)
