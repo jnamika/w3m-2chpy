@@ -13,20 +13,24 @@ import urllib2
 import cookielib
 import codecs
 import cPickle
-
-sys.stdout = codecs.lookup('utf_8')[-1](sys.stdout)
+import hashlib
 
 cache_dir = '%s/.w3m/.w3m-2ch' % os.path.expanduser('~')
 encode_2ch = 'cp932'
+encode_w3m = 'utf-8'
 bbsmenu_url = 'http://menu.2ch.net/bbsmenu.html'
 bbsmenu_file = '%s/bbsmenu.html' % cache_dir
 headline_url = 'http://headline.2ch.net'
 headline_file = '%s/headline.html' % cache_dir
 user_agent = 'w3m-2chpy'
+default_name = ''
+default_mail = 'sage'
 script_name = os.path.basename(sys.argv[0])
 cgi_script = 'cgi-bin/%s' % script_name
 r_thread_list_url = r'http:\/\/[^ ]*\.(?:2ch\.net|bbspink\.com)'
 r_thread_url = r'http:\/\/[^ ]*\.(?:2ch\.net|bbspink\.com)\/test\/read\.cgi'
+
+sys.stdout = codecs.lookup(encode_w3m)[-1](sys.stdout)
 
 if not os.path.isdir(cache_dir):
     os.mkdir(cache_dir)
@@ -200,7 +204,7 @@ def print_thread_header(bbs, key, thread_name, new_num=None, old_num=None,
     t = time.localtime(int(key))
     st = time.strftime('%Y/%m/%d %H:%M:%S', t)
     print '<tr>'
-    print '<td nowrap><a href="file:/%s?%s=%s/%s/">%s</a></td>' % (cgi_script,
+    print '<td><a href="file:/%s?%s=%s/%s/">%s</a></td>' % (cgi_script,
             func, bbs, key, thread_name)
     print '<td nowrap align=right>(%d)</td>' % new_num
     print '<td nowrap align=right>%s</td>' % newlines
@@ -273,6 +277,37 @@ def print_thread_list(bbs, sort_type=None, reverse=False):
     print '</body>'
     print '</html>'
 
+def apply_abone(dat, bbs, key):
+    file = '%s/abone.cache' % cache_dir
+    if os.path.isfile(file):
+        f = open(file, 'r')
+        abone_list = cPickle.load(f)
+        f.close()
+    else:
+        abone_list = []
+    abone_all = [x for x in abone_list if x[0] == '' and x[1] == '']
+    abone_bbs = [x for x in abone_list if x[0] == bbs and x[1] == '']
+    abone_thread = [x for x in abone_list if x[0] == bbs and x[1] == key]
+    abone_list = abone_all + abone_bbs + abone_thread
+    new_dat = []
+    for i, str in enumerate(dat):
+        v = str.split('<>')
+        idx = i + 1
+        is_abone = True
+        for abone in abone_list:
+            if abone[2] and abone[2].isdigit() and int(abone[2]) != idx:
+                is_abone = False
+            else:
+                for i, a in enumerate(abone[3:7]):
+                    if a and not a.isspace() and v[i].count(a.rstrip()) == 0:
+                        is_abone = False
+                        break
+            if is_abone:
+                str = '<><><><>'
+                break
+        new_dat.append(str)
+    return new_dat
+
 def get_reference(dat):
     p = re.compile(r'([0-9]+)-?([0-9]*)')
     ref = {}
@@ -289,10 +324,10 @@ def get_reference(dat):
                 else:
                     stop = start + 1
                 for k in xrange(start, stop):
-                    if k not in ref:
-                        ref[k] = [idx]
-                    else:
+                    if k in ref:
                         ref[k].append(idx)
+                    else:
+                        ref[k] = [idx]
     return ref
 
 def get_id_reference(dat):
@@ -314,10 +349,11 @@ def get_id_reference(dat):
             id_ref[idx] = [x for x in v if x != idx]
     return id_ref
 
-def dat2html(dat):
+def dat2html(dat, bbs, key):
     p = re.compile(r'<a href="?[^"]*/[0-9]+-?[0-9]*"? target="?_blank"?>'
             r'&gt;&gt;(([0-9]+)-?([0-9]*))</a>')
     q = re.compile(r'(' + r_thread_url + r'\/([^ ]*))')
+    dat = apply_abone(dat, bbs, key)
     ref = get_reference(dat)
     id_ref = get_id_reference(dat)
     html = []
@@ -326,7 +362,8 @@ def dat2html(dat):
         idx = i + 1
         s = []
         s.append('<p><dt><a name=%d>%d:</a>' % (idx, idx))
-        s.append('<a href="mailto:%s">%s</a>' % (v[1], v[0]))
+        s.append('<a href="file:/%s?Abone=new&bbs=%s&key=%s&idx=%s">%s</a>' %
+                (cgi_script, bbs, key, idx, v[0]))
         s.append('&nbsp; [ %s ] &nbsp;%s' % (v[1], v[2]))
         if idx in id_ref and len(id_ref[idx]) > 0:
             r = id_ref[idx]
@@ -431,7 +468,7 @@ def print_thread(item, retrieve=True):
     print '<h1>%s</h1>' % thread_name
     print '<a href="%s">%s</a><br>' % (orig_url, orig_url)
     print '<dl>'
-    html = dat2html(dat)
+    html = dat2html(dat, bbs, key)
     for i,s in enumerate(html):
         if old_num != new_num and i == old_num:
             print '<p><table width=50% border=5><tr align=center><td>'
@@ -443,14 +480,15 @@ def print_thread(item, retrieve=True):
     print '<hr>'
     print thread_menu
     print '<br><br>'
-    print '<form method=POST accept-charset="cp932" '
-    print 'action="file:///cgi-bin/w3m-2chpy.cgi">'
+    print '<form method=POST accept-charset="%s" ' % encode_w3m
+    print 'action="file:/%s">' % cgi_script
     print '<input type=submit value="Submit" name=submit>'
-    print 'Name<input name=FROM size=19>'
-    print 'E-mail: <input name=mail value="sage" size=19><br>'
+    print 'Name<input name=FROM value="%s" size=19>' % default_name
+    print 'E-mail: <input name=mail value="%s" size=19><br>' % default_mail
     print '<textarea rows=5 cols=70 wrap=off name=MESSAGE></textarea>'
     print '<input type=hidden name=PostMsg value=on>'
     print '<input type=hidden name=kuno value=ichi>'
+    print '<input type=hidden name=saku value=pontan>'
     print '<input type=hidden name=hana value=mogera>'
     print '<input type=hidden name=bbs value=%s>' % bbs
     print '<input type=hidden name=key value=%s>' % key
@@ -465,7 +503,7 @@ def print_thread(item, retrieve=True):
     cPickle.dump(thread_log, f)
     f.close()
 
-def delete_datfile(item):
+def delete_dat(item):
     file = '%s/%s.dat' % (cache_dir, item)
     if os.path.isfile(file):
         os.remove(file)
@@ -479,6 +517,172 @@ def delete_datfile(item):
         cPickle.dump(thread_log, f)
         f.close()
     print 'w3m-control: BACK'
+
+def abone2hash(abone):
+    return hashlib.sha1('<>'.join(abone).encode(encode_w3m)).hexdigest()
+
+def hash2abone(ha, abone_list):
+    ha_list = [abone2hash(x) for x in abone_list]
+    if ha in ha_list:
+        n = ha_list.index(ha)
+        abone = abone_list.pop(n)
+    else:
+        abone = ('', '', '', '', '', '', '')
+    return abone
+
+def query2abone(query, abone_list=None):
+    if 'sha1' in query and abone_list != None:
+        abone = hash2abone(query['sha1'], abone_list)
+    else:
+        bbs = query['bbs'] if 'bbs' in query else ''
+        key = query['key'] if 'key' in query else ''
+        idx = query['idx'] if 'idx' in query else ''
+        f = query['FROM'] if 'FROM' in query else ''
+        m = query['mail'] if 'mail' in query else ''
+        id = query['id'] if 'id' in query else ''
+        msg = query['MESSAGE'] if 'MESSAGE' in query else ''
+        abone = (bbs, key, idx, f, m, id, msg)
+    return abone
+
+def print_abone(query):
+    file = '%s/abone.cache' % cache_dir
+    if os.path.isfile(file):
+        f = open(file, 'r')
+        abone_list = cPickle.load(f)
+        f.close()
+    else:
+        abone_list = []
+    if 'Abone' in query and query['Abone'] == 'new':
+        abone = query2abone(query)
+    elif 'Abone' in query and query['Abone'] == 'mod':
+        abone = query2abone(query, abone_list)
+    else:
+        abone = ('', '', '', '', '', '', '')
+    bbs, key, idx, f, m, id, msg = abone
+    categories, links = get_bbsmenu()
+    if bbs:
+        url, board_name = get_board_url(bbs, links)
+        if key:
+            file = '%s/%s/%s.dat' % (cache_dir, bbs, key)
+            dat, new_num, old_num = get_dat(None, file, False)
+            thread_name = dat[0].split('<>')[4]
+            if query['Abone'] == 'new':
+                try:
+                    n = int(idx) - 1
+                    f, m, id, msg = tuple(dat[n].split('<>')[0:4])
+                except:
+                    pass
+    print 'Content-Type: text/html'
+    if 'Abone' not in query or query['Abone'] != 'new':
+        print 'w3m-control: DELETE_PREVBUF'
+    print ''
+    print '<html><head>'
+    print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
+    print '<title>Abone Template Setup</title></head>'
+    print '<body>'
+    print '<h1>Abone Template Setup</h1>'
+    print '<form method=POST accept-charset="%s" ' % encode_w3m
+    print 'action="file:///cgi-bin/w3m-2chpy.cgi">'
+    print '<table>'
+    print '<tr><td>Res:</td>'
+    print '<td><input name=idx value="%s" size=70></td></tr>' % (idx if idx
+            else '')
+    print '<tr><td>FROM:</td>'
+    print '<td><input name=FROM value="%s" size=70></td></tr>' % f
+    print '<tr><td>Mail:</td>'
+    print '<td><input name=mail value="%s" size=70></td></tr>' % m
+    print '<tr><td>Time & ID:</td>'
+    print '<td><input name=id value="%s" size=70></td></tr>' % id
+    print '<tr><td>Message:</td>'
+    print '<td><textarea rows=5 cols=70 wrap=off name=MESSAGE>%s' % msg
+    print '</textarea>'
+    print '</td></tr>'
+    print '<tr><td>Scope:</td><td><select name=scope>'
+    scope = [('', 'All')]
+    if bbs:
+        scope.append((bbs, board_name))
+        if key:
+            scope.append(('%s/%s' % (bbs, key), thread_name))
+    scope.reverse()
+    for s in scope:
+        print '<option value="%s">%s' % (s[0], s[1])
+    print '</select></td></tr>'
+    print '<tr><td></td>'
+    print '<td align=right><input type=submit value="Add" name=submit></td></tr>'
+    print '</table>'
+    if 'sha1' in query:
+        print '<input type=hidden name=sha1 value=%s>' % query['sha1']
+    print '<input type=hidden name=Abone value=add>'
+    print '</form><br><br>'
+    print '<table>'
+    for n, abone in enumerate(abone_list):
+        bbs, key, idx, f, m, id, msg = abone
+        if bbs and key:
+            scope = '%s/%s' % (bbs, key)
+            file = '%s/%s/%s.dat' % (cache_dir, bbs, key)
+            dat, new_num, old_num = get_dat(None, file, False)
+            scope_name = dat[0].split('<>')[4]
+        elif abone[0]:
+            scope = bbs
+            url, scope_name = get_board_url(bbs, links)
+        else:
+            scope = ''
+            scope_name = 'All'
+        ha = abone2hash(abone)
+        print '<tr>'
+        print '<td nowrap>'
+        print '[<a href="file:/%s?Abone=del&sha1=%s">D</a>]' % (cgi_script, ha)
+        print '[<a href="file:/%s?Abone=mod&sha1=%s">E</a>]' % (cgi_script, ha)
+        print '</td>'
+        print '<td nowrap>Scope:</td><td nowrap colspan=7>%s</td>' % scope_name
+        print '</tr><td></td>'
+        print '<td nowrap>Res:</td><td nowrap>%s</td>' % idx
+        print '<td nowrap>FROM:</td><td nowrap>%s</td>' % f
+        print '<td nowrap>Mail:</td><td nowrap>%s</td>' % m
+        print '<td nowrap>Time & ID:</td><td nowrap>%s</td>' % id
+        print '</tr><tr><td nowrap></td><td nowrap>Message:</td>'
+        print '<td nowrap colspan=7>%s</td>' % msg
+        print '</tr>'
+    print '</table>'
+    print '</body></html>'
+
+def add_abone(query):
+    bbs, key, idx, f, m, id, msg = query2abone(query)
+    scope = query['scope'] if 'scope' in query else ''
+    if scope:
+        s = scope.split('/')
+        bbs = s[0]
+        key = s[1] if len(s) > 1 else ''
+    abone = (bbs, key, idx, f, m, id, msg)
+    file = '%s/abone.cache' % cache_dir
+    if os.path.isfile(file):
+        f = open(file, 'r')
+        abone_list = cPickle.load(f)
+        f.close()
+    else:
+        abone_list = []
+    if 'sha1' in query:
+        hash2abone(query['sha1'], abone_list)
+    abone_list.insert(0, abone)
+    f = open(file, 'w')
+    cPickle.dump(abone_list, f)
+    f.close()
+    print_abone({})
+
+def delete_abone(query):
+    ha = query['sha1']
+    file = '%s/abone.cache' % cache_dir
+    if os.path.isfile(file):
+        f = open(file, 'r')
+        abone_list = cPickle.load(f)
+        f.close()
+    else:
+        abone_list = []
+    hash2abone(ha, abone_list)
+    f = open(file, 'w')
+    cPickle.dump(abone_list, f)
+    f.close()
+    print_abone({})
 
 def print_headline(type='news'):
     if type == 'news':
@@ -533,6 +737,8 @@ def post_msg(query):
     base_url = re.sub(r'\/%s' % bbs, '', url)
     referer = base_url + 'test/read.cgi/%s/%s/' % (bbs, key)
     url = base_url + 'test/bbs.cgi'
+    for k, v in query.iteritems():
+        query[k] = v.encode(encode_2ch)
     encoded_query = urllib.urlencode(query)
     item = '%s/%s/' % (bbs, key)
     if 'MESSAGE' not in query:
@@ -546,14 +752,14 @@ def post_msg(query):
         req.add_header("Referer", referer)
         req.add_header("User-agent", user_agent)
         res = opener.open(req)
-        #print 'Content-Type: text/html'                # Debug
-        #print ''                                       # Debug
-        #print res.read().decode('cp932', 'replace')    # Debug
+        #print 'Content-Type: text/html'                   # Debug
+        #print ''                                          # Debug
+        #print res.read().decode(encode_2ch, 'replace')    # Debug
         req = urllib2.Request(url, encoded_query)
         req.add_header("Referer", referer)
         req.add_header("User-agent", user_agent)
         res = opener.open(req)
-        #print res.read().decode('cp932', 'replace')    # Debug
+        #print res.read().decode(encode_2ch, 'replace')    # Debug
         print_thread(item)
 
 def main():
@@ -567,7 +773,7 @@ def main():
             query = {}
         q = {}
         for k, v in query.iteritems():
-            q[k] = v[0]
+            q[k] = v[0].decode(encode_w3m, 'replace')
         query = q
         if query:
             if 'PrintBoardList' in query:
@@ -589,7 +795,7 @@ def main():
                 print_thread(item, retrieve=False)
             elif 'DeleteDat' in query:
                 item = cgi.escape(query['DeleteDat'])
-                delete_datfile(item)
+                delete_dat(item)
             elif 'PrintHeadLine' in query:
                 type = cgi.escape(query['PrintHeadLine'])
                 if type == 'NEWS':
@@ -600,6 +806,13 @@ def main():
                 update_link()
             elif 'PostMsg' in query:
                 post_msg(query)
+            elif 'Abone' in query:
+                if query['Abone'] == 'new' or query['Abone'] == 'mod':
+                    print_abone(query)
+                elif query['Abone'] == 'add':
+                    add_abone(query)
+                elif query['Abone'] == 'del':
+                    delete_abone(query)
     except:
         print 'Content-Type: text/plain'
         print ''
