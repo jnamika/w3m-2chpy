@@ -22,11 +22,11 @@ bbsmenu_url = 'http://menu.2ch.net/bbsmenu.html'
 bbsmenu_file = '%s/bbsmenu.html' % cache_dir
 headline_url = 'http://headline.2ch.net'
 headline_file = '%s/headline.html' % cache_dir
-user_agent = 'w3m-2chpy'
 default_name = ''
 default_mail = 'sage'
 script_name = os.path.basename(sys.argv[0])
 cgi_script = 'cgi-bin/%s' % script_name
+user_agent = 'Monazilla/1.00 (%s)' % script_name
 r_thread_list_url = r'http:\/\/[^ ]*\.(?:2ch\.net|bbspink\.com)'
 r_thread_url = r'http:\/\/[^ ]*\.(?:2ch\.net|bbspink\.com)\/test\/read\.cgi'
 
@@ -488,8 +488,6 @@ def print_thread(item, retrieve=True):
     print '<textarea rows=5 cols=70 wrap=off name=MESSAGE></textarea>'
     print '<input type=hidden name=PostMsg value=on>'
     print '<input type=hidden name=kuno value=ichi>'
-    print '<input type=hidden name=saku value=pontan>'
-    print '<input type=hidden name=hana value=mogera>'
     print '<input type=hidden name=bbs value=%s>' % bbs
     print '<input type=hidden name=key value=%s>' % key
     print '<input type=hidden name=time value=%d>' % int(time.time())
@@ -748,16 +746,14 @@ def post_msg(query):
     else:
         cj = cookielib.CookieJar()
         opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-        req = urllib2.Request(base_url) # get cookie
+        req = urllib2.Request(url, encoded_query)
         req.add_header("Referer", referer)
         req.add_header("User-agent", user_agent)
         res = opener.open(req)
         #print 'Content-Type: text/html'                   # Debug
         #print ''                                          # Debug
         #print res.read().decode(encode_2ch, 'replace')    # Debug
-        req = urllib2.Request(url, encoded_query)
-        req.add_header("Referer", referer)
-        req.add_header("User-agent", user_agent)
+        #print cj                                          # Debug
         res = opener.open(req)
         #print res.read().decode(encode_2ch, 'replace')    # Debug
         print_thread(item)
