@@ -487,7 +487,6 @@ def print_thread(item, retrieve=True):
     print 'E-mail: <input name=mail value="%s" size=19><br>' % default_mail
     print '<textarea rows=5 cols=70 wrap=off name=MESSAGE></textarea>'
     print '<input type=hidden name=PostMsg value=on>'
-    print '<input type=hidden name=kuno value=ichi>'
     print '<input type=hidden name=bbs value=%s>' % bbs
     print '<input type=hidden name=key value=%s>' % key
     print '<input type=hidden name=time value=%d>' % int(time.time())
@@ -726,6 +725,24 @@ def update_link():
     urllib.urlretrieve(bbsmenu_url, bbsmenu_file)
     print 'w3m-control: BACK'
 
+
+class InputHiddenParser(HTMLParser.HTMLParser):
+    def __init__(self):
+        HTMLParser.HTMLParser.__init__(self)
+        self.query = {}
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'input':
+            attrs = dict(attrs)
+            if 'type' in attrs and attrs['type'] == 'hidden':
+                if 'name' in attrs and 'value' in attrs:
+                    name = attrs['name']
+                    value = attrs['value']
+                    self.query[name] = value
+
+    def error(self, msg):
+        pass
+
 def post_msg(query):
     query.pop('PostMsg')
     bbs = query['bbs']
@@ -750,10 +767,22 @@ def post_msg(query):
         req.add_header("Referer", referer)
         req.add_header("User-agent", user_agent)
         res = opener.open(req)
+        html = res.read().decode(encode_2ch, 'replace')
+        parser = InputHiddenParser()
+        parser.feed(html)
+        parser.close()
+        for k, v in parser.query.iteritems():
+            if k not in query:
+                query[k] = v.encode(encode_2ch)
+        encoded_query = urllib.urlencode(query)
         #print 'Content-Type: text/html'                   # Debug
         #print ''                                          # Debug
-        #print res.read().decode(encode_2ch, 'replace')    # Debug
+        #print html                                        # Debug
         #print cj                                          # Debug
+        #print encoded_query                               # Debug
+        req = urllib2.Request(url, encoded_query)
+        req.add_header("Referer", referer)
+        req.add_header("User-agent", user_agent)
         res = opener.open(req)
         #print res.read().decode(encode_2ch, 'replace')    # Debug
         print_thread(item)
