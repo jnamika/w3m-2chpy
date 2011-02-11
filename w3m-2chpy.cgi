@@ -334,12 +334,13 @@ def get_reference(dat):
 
 def get_id_reference(dat):
     p = re.compile(r'ID:([^:]+)$')
+    q = re.compile(r'ID:\?\?\?')
     ref = {}
     for i, str in enumerate(dat):
         v = str.split('<>')
         idx = i + 1
         m = p.search(v[2])
-        if m:
+        if m and not q.search(v[2]):
             id = m.group(1)
             if id in ref:
                 ref[id].append(idx)
@@ -790,24 +791,21 @@ def post_msg(query):
         parser = InputHiddenParser()
         parser.feed(html)
         parser.close()
-        for k, v in parser.query.iteritems():
-            if k not in query:
-                query[k] = v.encode(encode_2ch)
-        encoded_query = urllib.urlencode(query)
-        #print 'Content-Type: text/html'                   # Debug
-        #print ''                                          # Debug
-        #print html                                        # Debug
-        #print cj                                          # Debug
-        #print encoded_query                               # Debug
-        req = urllib2.Request(url, encoded_query)
-        req.add_header("Referer", referer)
-        req.add_header("User-agent", user_agent)
-        res = opener.open(req)
+        if len(parser.query) > 0:
+            for k, v in parser.query.iteritems():
+                if k not in query:
+                    query[k] = v.encode(encode_2ch)
+            encoded_query = urllib.urlencode(query)
+            req = urllib2.Request(url, encoded_query)
+            req.add_header("Referer", referer)
+            req.add_header("User-agent", user_agent)
+            res = opener.open(req)
+            html = res.read().decode(encode_2ch, 'replace')
         f = open(cookie_file, 'w')
         cj = cPickle.dump(cj, f)
         f.close()
         print_thread(item)
-        #print res.read().decode(encode_2ch, 'replace')    # Debug
+        print html
 
 def main():
     try:
