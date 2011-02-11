@@ -11,6 +11,7 @@ import HTMLParser
 import urllib
 import urllib2
 import cookielib
+import threading
 import codecs
 import cPickle
 import hashlib
@@ -22,6 +23,7 @@ bbsmenu_url = 'http://menu.2ch.net/bbsmenu.html'
 bbsmenu_file = '%s/bbsmenu.html' % cache_dir
 headline_url = 'http://headline.2ch.net'
 headline_file = '%s/headline.html' % cache_dir
+cookie_file = '%s/cookie' % cache_dir
 default_name = ''
 default_mail = 'sage'
 script_name = os.path.basename(sys.argv[0])
@@ -743,6 +745,18 @@ class InputHiddenParser(HTMLParser.HTMLParser):
     def error(self, msg):
         pass
 
+
+class MyCookieJar(cookielib.CookieJar):
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state['_cookies_lock']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__ = state
+        self._cookies_lock = threading.RLock()
+
+
 def post_msg(query):
     query.pop('PostMsg')
     bbs = query['bbs']
@@ -761,7 +775,12 @@ def post_msg(query):
         print ''
         print 'Message is empty.'
     else:
-        cj = cookielib.CookieJar()
+        if os.path.isfile(cookie_file):
+            f = open(cookie_file, 'r')
+            cj = cPickle.load(f)
+            f.close()
+        else:
+            cj = MyCookieJar()
         opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
         req = urllib2.Request(url, encoded_query)
         req.add_header("Referer", referer)
@@ -784,8 +803,11 @@ def post_msg(query):
         req.add_header("Referer", referer)
         req.add_header("User-agent", user_agent)
         res = opener.open(req)
-        #print res.read().decode(encode_2ch, 'replace')    # Debug
+        f = open(cookie_file, 'w')
+        cj = cPickle.dump(cj, f)
+        f.close()
         print_thread(item)
+        #print res.read().decode(encode_2ch, 'replace')    # Debug
 
 def main():
     try:
