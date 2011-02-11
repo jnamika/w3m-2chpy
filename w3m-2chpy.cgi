@@ -728,24 +728,6 @@ def update_link():
     print 'w3m-control: BACK'
 
 
-class InputHiddenParser(HTMLParser.HTMLParser):
-    def __init__(self):
-        HTMLParser.HTMLParser.__init__(self)
-        self.query = {}
-
-    def handle_starttag(self, tag, attrs):
-        if tag == 'input':
-            attrs = dict(attrs)
-            if 'type' in attrs and attrs['type'] == 'hidden':
-                if 'name' in attrs and 'value' in attrs:
-                    name = attrs['name']
-                    value = attrs['value']
-                    self.query[name] = value
-
-    def error(self, msg):
-        pass
-
-
 class MyCookieJar(cookielib.CookieJar):
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -786,28 +768,11 @@ def post_msg(query):
         req.add_header("Referer", referer)
         req.add_header("User-agent", user_agent)
         res = opener.open(req)
-        html = res.read().decode(encode_2ch, 'replace')
-        parser = InputHiddenParser()
-        parser.feed(html)
-        parser.close()
-        for k, v in parser.query.iteritems():
-            if k not in query:
-                query[k] = v.encode(encode_2ch)
-        encoded_query = urllib.urlencode(query)
-        #print 'Content-Type: text/html'                   # Debug
-        #print ''                                          # Debug
-        #print html                                        # Debug
-        #print cj                                          # Debug
-        #print encoded_query                               # Debug
-        req = urllib2.Request(url, encoded_query)
-        req.add_header("Referer", referer)
-        req.add_header("User-agent", user_agent)
-        res = opener.open(req)
         f = open(cookie_file, 'w')
         cj = cPickle.dump(cj, f)
         f.close()
         print_thread(item)
-        #print res.read().decode(encode_2ch, 'replace')    # Debug
+        print res.read().decode(encode_2ch, 'replace')
 
 def main():
     try:
