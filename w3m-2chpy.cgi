@@ -295,13 +295,13 @@ def apply_abone(dat, bbs, key):
     for i, str in enumerate(dat):
         v = str.split('<>')
         idx = i + 1
-        is_abone = True
         for abone in abone_list:
+            is_abone = True
             if abone[2] and abone[2].isdigit() and int(abone[2]) != idx:
                 is_abone = False
             else:
-                for i, a in enumerate(abone[3:7]):
-                    if a and not a.isspace() and v[i].count(a.rstrip()) == 0:
+                for j, a in enumerate(abone[3:7]):
+                    if a and not a.isspace() and v[j].count(a.rstrip()) == 0:
                         is_abone = False
                         break
             if is_abone:
