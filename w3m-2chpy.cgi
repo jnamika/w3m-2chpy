@@ -316,7 +316,7 @@ def get_reference(dat):
     for i, str in enumerate(dat):
         v = str.split('<>')
         idx = i + 1
-        s = v[3].split('&gt;&gt;')
+        s = v[3].split('&gt;&gt;') if len(v) > 3 else []
         for x in s[1:]:
             m = p.match(x)
             if m:
@@ -339,7 +339,7 @@ def get_id_reference(dat):
     for i, str in enumerate(dat):
         v = str.split('<>')
         idx = i + 1
-        m = p.search(v[2])
+        m = p.search(v[2]) if len(v) > 2 else []
         if m and not q.search(v[2]):
             id = m.group(1)
             if id in ref:
@@ -805,7 +805,7 @@ def post_msg(query):
         cj = cPickle.dump(cj, f)
         f.close()
         print_thread(item)
-        print html
+        #print html
 
 def main():
     try:
