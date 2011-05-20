@@ -362,6 +362,8 @@ def dat2html(dat, bbs, key):
     html = []
     for i, str in enumerate(dat):
         v = str.split('<>')
+        if len(v) < 4:
+            continue
         idx = i + 1
         s = []
         s.append('<p><dt><a name=%d>%d:</a>' % (idx, idx))
@@ -711,7 +713,7 @@ def print_headline(type='news'):
     for line in html.splitlines():
         if not p.match(line):
             m = q.match(line)
-            if (m != None):
+            if m != None:
                 time = m.group(1)
                 item = m.group(2)
                 title = m.group(3)
