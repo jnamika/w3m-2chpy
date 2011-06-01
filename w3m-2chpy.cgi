@@ -771,6 +771,8 @@ def post_msg(query):
     url = base_url + 'test/bbs.cgi'
     for k, v in query.iteritems():
         query[k] = v.encode(encode_2ch)
+        if k == 'MESSAGE':
+            query[k] = query[k].replace(' ', '&nbsp;').strip()
     encoded_query = urllib.urlencode(query)
     item = '%s/%s/' % (bbs, key)
     if 'MESSAGE' not in query:
