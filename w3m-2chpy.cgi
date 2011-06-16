@@ -506,7 +506,7 @@ def print_thread(item, retrieve=True):
     f.close()
 
 def delete_dat(item):
-    file = '%s/%s.dat' % (cache_dir, item)
+    file = '%s/%s.dat' % (cache_dir, item.rstrip(' /'))
     if os.path.isfile(file):
         os.remove(file)
     bbs, key, indices = item.split('/')
