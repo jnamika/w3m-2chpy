@@ -17,6 +17,7 @@ import codecs
 import cPickle
 import hashlib
 
+
 cache_dir = '%s/.w3m/.w3m-2ch' % os.path.expanduser('~')
 encode_2ch = 'cp932'
 encode_w3m = 'utf-8'
@@ -33,10 +34,13 @@ user_agent = 'Monazilla/1.00 (%s)' % script_name
 r_thread_list_url = r'http:\/\/[^ ]*\.(?:2ch\.net|bbspink\.com)'
 r_thread_url = r'http:\/\/[^ ]*\.(?:2ch\.net|bbspink\.com)\/test\/read\.cgi'
 
+
 sys.stdout = codecs.lookup(encode_w3m)[-1](sys.stdout)
+
 
 if not os.path.isdir(cache_dir):
     os.mkdir(cache_dir)
+
 
 
 class LinkParser(HTMLParser.HTMLParser):
@@ -77,6 +81,8 @@ class LinkParser(HTMLParser.HTMLParser):
     def error(self, msg):
         pass
 
+
+
 def get_bbsmenu(retrieve=False):
     try:
         if retrieve or not os.path.isfile(bbsmenu_file):
@@ -90,6 +96,8 @@ def get_bbsmenu(retrieve=False):
     except:
         return [],[]
 
+
+
 def get_board_url(bbs, links):
     p = re.compile(r_thread_list_url + r'\/%s\/' % bbs)
     url, name = None, None
@@ -99,6 +107,8 @@ def get_board_url(bbs, links):
             name = link[1]
             break
     return url, name
+
+
 
 def print_board_list():
     categories, links = get_bbsmenu()
@@ -136,6 +146,8 @@ def print_board_list():
                         (cgi_script, bbs, link[1]) + '</td>')
         print '</tr></table>'
     print '</body></html>'
+
+
 
 def get_thread_list(bbs, url=None):
     p = re.compile(r'\.dat$')
@@ -183,6 +195,8 @@ def get_thread_list(bbs, url=None):
                 cPickle.dump(thread_list, f)
     return thread_list
 
+
+
 def print_thread_header(bbs, key, thread_name, new_num=None, old_num=None,
         retrieve=True):
     if new_num != None and old_num != None:
@@ -212,6 +226,8 @@ def print_thread_header(bbs, key, thread_name, new_num=None, old_num=None,
     print '<td nowrap>&nbsp;%s</td>' % st
     print '</tr>'
 
+
+
 def get_sorted_thread_list(thread_list, thread_log, sort_type, reverse):
     if sort_type == 'res':
         thread_list.sort(lambda x, y: -cmp(x[2],y[2]))
@@ -235,6 +251,8 @@ def get_sorted_thread_list(thread_list, thread_log, sort_type, reverse):
         thread_log.reverse()
     return thread_list, thread_log
 
+
+
 def print_thread_list(bbs, sort_type=None, reverse=False):
     categories, links = get_bbsmenu()
     url, board_name = get_board_url(bbs, links)
@@ -249,6 +267,8 @@ def print_thread_list(bbs, sort_type=None, reverse=False):
     print '</head>'
     print '<body>'
     print '[<a href="file:/%s?UpdateLink=on">Update Link</a>]' % cgi_script
+    print '[<a href="file:/%s?CreateNewThread=%s">Create New Thread</a>]' % (
+            cgi_script, bbs)
     print '<h1>%s</h1>' % board_name
     thread_list, thread_log = get_sorted_thread_list(thread_list, thread_log,
             sort_type, reverse)
@@ -276,6 +296,8 @@ def print_thread_list(bbs, sort_type=None, reverse=False):
     print '</table>'
     print '</body>'
     print '</html>'
+
+
 
 def apply_abone(dat, bbs, key):
     abone_file = '%s/abone.cache' % cache_dir
@@ -307,6 +329,8 @@ def apply_abone(dat, bbs, key):
         new_dat.append(s)
     return new_dat
 
+
+
 def get_reference(dat):
     p = re.compile(r'([0-9]+)-?([0-9]*)')
     ref = collections.defaultdict(list)
@@ -326,6 +350,8 @@ def get_reference(dat):
                     ref[k].append(idx)
     return ref
 
+
+
 def get_id_reference(dat):
     p = re.compile(r'ID:([^:]+)$')
     q = re.compile(r'ID:\?\?\?')
@@ -342,6 +368,8 @@ def get_id_reference(dat):
         for idx in v:
             id_ref[idx] = [x for x in v if x != idx]
     return id_ref
+
+
 
 def dat2html(dat, bbs, key):
     p = re.compile(r'<a href="?[^"]*/[0-9]+-?[0-9]*"? target="?_blank"?>'
@@ -380,6 +408,8 @@ def dat2html(dat, bbs, key):
         html.append(''.join(lst))
     return html
 
+
+
 def get_dat(url, dat_file, retrieve):
     try:
         with codecs.open(dat_file, 'r', encode_2ch, 'replace') as f:
@@ -393,8 +423,6 @@ def get_dat(url, dat_file, retrieve):
         try:
             urllib.urlretrieve(url, dat_file)
             with codecs.open(dat_file, 'r', encode_2ch, 'replace') as f:
-                if unicode(f.readline()).count('<>') != 4:
-                    raise
                 f.seek(0, 2)
                 if f.tell() < offset:
                     f.seek(0)
@@ -404,13 +432,19 @@ def get_dat(url, dat_file, retrieve):
                     new_dat = unicode(f.read()).splitlines()
                     dat.extend(new_dat)
         except:
-            with codecs.open(dat_file, 'w', encode_2ch, 'replace') as f:
-                f.write('\n'.join(dat))
+            pass
     new_num = len(dat)
     return dat, new_num, old_num
 
+
+
 def print_thread(item, retrieve=True):
-    bbs, key, indices = item.split('/')
+    tmp = item.split('/', 3)
+    if len(tmp) == 2:
+        bbs, key = tmp
+        indices = ''
+    else:
+        bbs, key, indices = tmp
     categories, links = get_bbsmenu()
     url, board_name = get_board_url(bbs, links)
     orig_url = re.sub(r'\/%s' % bbs, '', url) + 'test/read.cgi/%s/%s/' % (bbs,
@@ -492,6 +526,8 @@ def print_thread(item, retrieve=True):
     with open(cache_file, 'w') as f:
         cPickle.dump(thread_log, f)
 
+
+
 def delete_dat(item):
     dat_file = '%s/%s.dat' % (cache_dir, item.rstrip(' /'))
     if os.path.isfile(dat_file):
@@ -506,8 +542,12 @@ def delete_dat(item):
             cPickle.dump(thread_log, f)
     print 'w3m-control: BACK'
 
+
+
 def abone2hash(abone):
     return hashlib.sha1('<>'.join(abone).encode(encode_w3m)).hexdigest()
+
+
 
 def hash2abone(ha, abone_list):
     ha_list = [abone2hash(x) for x in abone_list]
@@ -517,6 +557,8 @@ def hash2abone(ha, abone_list):
     else:
         abone = ('', '', '', '', '', '', '')
     return abone
+
+
 
 def query2abone(query, abone_list=None):
     if 'sha1' in query and abone_list != None:
@@ -531,6 +573,8 @@ def query2abone(query, abone_list=None):
         msg = query['MESSAGE'] if 'MESSAGE' in query else ''
         abone = (bbs, key, idx, f, m, i, msg)
     return abone
+
+
 
 def print_abone(query):
     abone_file = '%s/abone.cache' % cache_dir
@@ -633,6 +677,8 @@ def print_abone(query):
     print '</table>'
     print '</body></html>'
 
+
+
 def add_abone(query):
     bbs, key, idx, f, m, i, msg = query2abone(query)
     scope = query['scope'] if 'scope' in query else ''
@@ -654,6 +700,8 @@ def add_abone(query):
         cPickle.dump(abone_list, f)
     print_abone({})
 
+
+
 def delete_abone(query):
     ha = query['sha1']
     abone_file = '%s/abone.cache' % cache_dir
@@ -666,6 +714,8 @@ def delete_abone(query):
     with open(abone_file, 'w') as f:
         cPickle.dump(abone_list, f)
     print_abone({})
+
+
 
 def print_headline(h_type='news'):
     if h_type == 'news':
@@ -706,9 +756,34 @@ def print_headline(h_type='news'):
     print '</table>'
     print '</body></html>'
 
+
+
 def update_link():
     urllib.urlretrieve(bbsmenu_url, bbsmenu_file)
     print 'w3m-control: BACK'
+
+
+
+def create_new_thread(bbs):
+    print 'Content-Type: text/html'
+    print ''
+    print '<html><head>'
+    print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
+    print '<title>%s</title></head>' % bbs
+    print '<body>'
+    print '<form method=POST accept-charset="%s" ' % encode_w3m
+    print 'action="file:/%s">' % cgi_script
+    print 'Title: <input type=text name="subject" size="40"><br>'
+    print 'Name: <input name=FROM value="%s" size=19>' % default_name
+    print 'E-mail: <input name=mail value="%s" size=19><br>' % default_mail
+    print '<textarea rows=5 cols=70 wrap=off name=MESSAGE></textarea><br>'
+    print u'<input type=submit value="新規スレッド作成" name=submit>'
+    print '<input type=hidden name=PostMsg value=on>'
+    print '<input type=hidden name=bbs value=%s>' % bbs
+    print '<input type=hidden name=time value=%d>' % int(time.time())
+    print '</form>'
+    print '</body></html>'
+
 
 
 class InputHiddenParser(HTMLParser.HTMLParser):
@@ -729,6 +804,7 @@ class InputHiddenParser(HTMLParser.HTMLParser):
         pass
 
 
+
 class MyCookieJar(cookielib.CookieJar):
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -740,21 +816,25 @@ class MyCookieJar(cookielib.CookieJar):
         self._cookies_lock = threading.RLock()
 
 
+
 def post_msg(query):
     query.pop('PostMsg')
     bbs = query['bbs']
-    key = query['key']
     categories, links = get_bbsmenu()
     url, board_name = get_board_url(bbs, links)
     base_url = re.sub(r'\/%s' % bbs, '', url)
-    referer = base_url + 'test/read.cgi/%s/%s/' % (bbs, key)
+    if 'key' in query:
+        key = query['key']
+        referer = base_url + 'test/read.cgi/%s/%s/' % (bbs, key)
+    else:
+        key = None
+        referer = base_url + 'test/read.cgi/%s/' % bbs
     url = base_url + 'test/bbs.cgi'
     for k, v in query.iteritems():
         query[k] = v.encode(encode_2ch)
         if k == 'MESSAGE':
             query[k] = query[k].replace(' ', '&nbsp;').strip()
     encoded_query = urllib.urlencode(query)
-    item = '%s/%s/' % (bbs, key)
     if 'MESSAGE' not in query:
         print 'Content-Type: text/plain'
         print ''
@@ -786,8 +866,14 @@ def post_msg(query):
             html = res.read().decode(encode_2ch, 'replace')
         with open(cookie_file, 'w') as f:
             cj = cPickle.dump(cj, f)
-        print_thread(item)
+        if key:
+            item = '%s/%s/' % (bbs, key)
+            print_thread(item)
+        else:
+            print_thread_list(bbs)
         #print html
+
+
 
 def main():
     try:
@@ -831,6 +917,9 @@ def main():
                     print_headline(h_type='live')
             elif 'UpdateLink' in query:
                 update_link()
+            elif 'CreateNewThread' in query:
+                bbs = cgi.escape(query['CreateNewThread'])
+                create_new_thread(bbs)
             elif 'PostMsg' in query:
                 post_msg(query)
             elif 'Abone' in query:
@@ -844,6 +933,8 @@ def main():
         print 'Content-Type: text/plain'
         print ''
         traceback.print_exc(file=sys.stdout)
+
+
 
 if __name__ == "__main__":
     main()
