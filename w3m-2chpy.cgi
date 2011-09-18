@@ -181,8 +181,8 @@ def get_thread_list(bbs, url=None):
             thread_list = []
             for name in [x for x in os.listdir(bbs_dir) if r.match(x)]:
                 try:
-                    with codecs.open('%s/%s' % (bbs_dir, name, 'replace'), 'r',
-                            encode_2ch) as f:
+                    with codecs.open('%s/%s' % (bbs_dir, name), 'r',
+                            encode_2ch, 'replace') as f:
                         s = unicode(f.read()).splitlines()
                     key = p.sub('', name)
                     thread_name = s[0].split('<>')[4]
