@@ -3,18 +3,26 @@
 
 import sys
 import os
+import io
 import traceback
 import re
 import collections
 import cgi
 import time
-import HTMLParser
-import urllib
-import urllib2
-import cookielib
+if sys.version_info >= (3, 0):
+    from html.parser import HTMLParser
+    from urllib.request import urlretrieve
+    from urllib.request import build_opener, HTTPCookieProcessor, Request
+    from urllib.parse import unquote_plus, urlencode
+    from http.cookiejar import CookieJar
+else:
+    from HTMLParser import HTMLParser
+    from urllib import unquote_plus, urlretrieve, urlencode
+    from urllib2 import build_opener, HTTPCookieProcessor, Request
+    from cookielib import CookieJar
 import threading
 import codecs
-import cPickle
+import pickle
 import hashlib
 
 
@@ -33,9 +41,13 @@ cgi_script = 'cgi-bin/%s' % script_name
 user_agent = 'Monazilla/1.00 (%s)' % script_name
 r_thread_list_url = r'http:\/\/[^ ]*\.(?:2ch\.net|bbspink\.com)'
 r_thread_url = r'http:\/\/[^ ]*\.(?:2ch\.net|bbspink\.com)\/test\/read\.cgi'
+debug_mode = False
 
 
-sys.stdout = codecs.lookup(encode_w3m)[-1](sys.stdout)
+if sys.version_info >= (3, 0):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding=encode_w3m)
+else:
+    sys.stdout = codecs.lookup(encode_w3m)[-1](sys.stdout)
 
 
 if not os.path.isdir(cache_dir):
@@ -43,13 +55,13 @@ if not os.path.isdir(cache_dir):
 
 
 
-class LinkParser(HTMLParser.HTMLParser):
+class LinkParser(HTMLParser):
     def __init__(self):
-        HTMLParser.HTMLParser.__init__(self)
+        HTMLParser.__init__(self)
         self.categories = []
         self.links = []
         self.category = ''
-        self.atters = {}
+        self.attrs = {}
         self.data = []
         self.flag = False
 
@@ -63,7 +75,7 @@ class LinkParser(HTMLParser.HTMLParser):
     def handle_endtag(self, tag):
         if tag == 'a':
             if self.data and 'href' in self.attrs:
-                url = urllib.unquote_plus(self.attrs['href'])
+                url = unquote_plus(self.attrs['href'])
                 name = ''.join(self.data)
                 link = (url, name, self.category)
                 self.links.append(link)
@@ -86,14 +98,18 @@ class LinkParser(HTMLParser.HTMLParser):
 def get_bbsmenu(retrieve=False):
     try:
         if retrieve or not os.path.isfile(bbsmenu_file):
-            urllib.urlretrieve(bbsmenu_url, bbsmenu_file)
+            urlretrieve(bbsmenu_url, bbsmenu_file)
         with codecs.open(bbsmenu_file, 'r', encode_2ch, 'replace') as f:
-            html = unicode(f.read())
+            html = f.read()
         parser = LinkParser()
         parser.feed(html)
         parser.close()
         return parser.categories, parser.links
     except:
+        if debug_mode:
+            print('Content-Type: text/plain')
+            print('')
+            traceback.print_exc(file=sys.stdout)
         return [],[]
 
 
@@ -112,40 +128,41 @@ def get_board_url(bbs, links):
 
 def print_board_list():
     categories, links = get_bbsmenu()
-    print 'Content-Type: text/html'
-    print ''
-    print '<html><head>'
-    print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
-    print '</head>'
-    print '<body>'
-    print ('[<a href="file:/%s?PrintBoardList=reload">'
+    print('Content-Type: text/html')
+    print('')
+    print('<html><head>')
+    print('<meta http-equiv="Content-Type" content="text/html;'
+            ' charset=UTF-8">')
+    print('</head>')
+    print('<body>')
+    print('[<a href="file:/%s?PrintBoardList=reload">'
             'Reload BoardList</a>]<br>' % cgi_script)
     columns = 5
-    print '<table><tr><td colspan=%d>' % columns
-    print 'Click to jump to each of the categories.'
-    print '</td></tr><tr>'
+    print('<table><tr><td colspan=%d>' % columns)
+    print('Click to jump to each of the categories.')
+    print('</td></tr><tr>')
     for idx, item in enumerate(categories):
         if (idx + 1) % columns == 0:
-            print '</tr><tr>'
-        print '<td><a href=#%d>%s</a></td>' % (idx, item)
-    print '</tr></table><hr>'
+            print('</tr><tr>')
+        print('<td><a href=#%d>%s</a></td>' % (idx, item))
+    print('</tr></table><hr>')
     p = re.compile(r_thread_list_url + r'\/([^ ]*)\/')
     for idx, item in enumerate(categories):
-        print '<table>'
-        print '<tr><td colspan=%d>' % columns
-        print '<b><a name=%d>%s</a></b></td></tr><tr>' % (idx, item)
+        print('<table>')
+        print('<tr><td colspan=%d>' % columns)
+        print('<b><a name=%d>%s</a></b></td></tr><tr>' % (idx, item))
         n = 0
         for link in [x for x in links if x[2] == item]:
             m = p.match(link[0])
             if m != None:
                 n += 1
                 if n % columns == 0:
-                    print '</tr><tr>'
+                    print('</tr><tr>')
                 bbs = m.group(1)
-                print ('<td><a href="file:/%s?PrintThreadList=%s">%s</a>' %
+                print('<td><a href="file:/%s?PrintThreadList=%s">%s</a>' %
                         (cgi_script, bbs, link[1]) + '</td>')
-        print '</tr></table>'
-    print '</body></html>'
+        print('</tr></table>')
+    print('</body></html>')
 
 
 
@@ -164,18 +181,18 @@ def get_thread_list(bbs, url=None):
             os.mkdir(bbs_dir)
         subject_file = '%s/subject.txt' % bbs_dir
         try:
-            urllib.urlretrieve(url, subject_file)
+            urlretrieve(url, subject_file)
             with codecs.open(subject_file, 'r', encode_2ch, 'replace') as f:
-                thread_list = unicode(f.read()).splitlines()
-            thread_list = map(splitter, thread_list)
+                thread_list = f.read().splitlines()
+            thread_list = list(map(splitter, thread_list))
         except:
             thread_list = []
     else:
         bbs_dir = '%s/%s' % (cache_dir, bbs)
         cache_file = '%s/subject.cache' % bbs_dir
         if os.path.isfile(cache_file):
-            with open(cache_file, 'r') as f:
-                thread_list = cPickle.load(f)
+            with open(cache_file, 'rb') as f:
+                thread_list = pickle.load(f)
         else:
             r = re.compile(r'^[0-9]+\.dat')
             thread_list = []
@@ -183,16 +200,19 @@ def get_thread_list(bbs, url=None):
                 try:
                     with codecs.open('%s/%s' % (bbs_dir, name), 'r',
                             encode_2ch, 'replace') as f:
-                        s = unicode(f.read()).splitlines()
-                    key = p.sub('', name)
-                    thread_name = s[0].split('<>')[4]
-                    thread_list.append((key, thread_name, len(s)))
+                        s = f.read().splitlines()
+                        key = p.sub('', name)
+                        thread_name = s[0].split('<>')[4]
+                        thread_list.append((key, thread_name, len(s)))
                 except:
-                    pass
+                    if debug_mode:
+                        print('Content-Type: text/plain')
+                        print('')
+                        traceback.print_exc(file=sys.stdout)
             if not os.path.isdir(bbs_dir):
                 os.mkdir(bbs_dir)
-            with open(cache_file, 'w') as f:
-                cPickle.dump(thread_list, f)
+            with open(cache_file, 'wb') as f:
+                pickle.dump(thread_list, f)
     return thread_list
 
 
@@ -217,35 +237,35 @@ def print_thread_header(bbs, key, thread_name, new_num=None, old_num=None,
         func = 'PrintThreadLog'
     t = time.localtime(int(key))
     st = time.strftime('%Y/%m/%d %H:%M:%S', t)
-    print '<tr>'
-    print '<td><a href="file:/%s?%s=%s/%s/">%s</a></td>' % (cgi_script,
-            func, bbs, key, thread_name)
-    print '<td nowrap align=right>(%d)</td>' % new_num
-    print '<td nowrap align=right>%s</td>' % newlines
-    print '<td nowrap align=right>%s</td>' % activity
-    print '<td nowrap>&nbsp;%s</td>' % st
-    print '</tr>'
+    print('<tr>')
+    print('<td><a href="file:/%s?%s=%s/%s/">%s</a></td>' % (cgi_script,
+            func, bbs, key, thread_name))
+    print('<td nowrap align=right>(%d)</td>' % new_num)
+    print('<td nowrap align=right>%s</td>' % newlines)
+    print('<td nowrap align=right>%s</td>' % activity)
+    print('<td nowrap>&nbsp;%s</td>' % st)
+    print('</tr>')
 
 
 
 def get_sorted_thread_list(thread_list, thread_log, sort_type, reverse):
     if sort_type == 'res':
-        thread_list.sort(lambda x, y: -cmp(x[2],y[2]))
-        thread_log.sort(lambda x, y: -cmp(x[2],y[2]))
+        thread_list.sort(key = lambda x: -x[2])
+        thread_log.sort(key = lambda x: -x[2])
     elif sort_type == 'num':
         keys = [x[0] for x in thread_log]
         tmp = [x for x in thread_list if x[0] in keys]
         tmp = [(x[0], x[1], x[2], x[2] - thread_log[keys.index(x[0])][2]) for x
                 in tmp]
-        tmp.sort(lambda x, y: -cmp(x[3],y[3]))
+        tmp.sort(key = lambda x: -x[3])
         thread_list = tmp + [x for x in thread_list if x[0] not in keys]
     elif sort_type == 'act':
         t = time.time()
         f = lambda x, y: x / (t - float(y))
-        thread_list.sort(lambda x, y: -cmp(f(x[2], x[0]), f(y[2], y[0])))
+        thread_list.sort(key = lambda x: -f(x[2], x[0]))
     elif sort_type == 'time':
-        thread_list.sort(lambda x, y: -cmp(int(x[0]),int(y[0])))
-        thread_log.sort(lambda x, y: -cmp(int(x[0]),int(y[0])))
+        thread_list.sort(key = lambda x: -int(x[0]))
+        thread_log.sort(key = lambda x: -int(x[0]))
     if sort_type and reverse:
         thread_list.reverse()
         thread_log.reverse()
@@ -259,51 +279,52 @@ def print_thread_list(bbs, sort_type=None, reverse=False):
     url = '%s/subject.txt' % url
     thread_list = get_thread_list(bbs, url)
     thread_log = get_thread_list(bbs, None)
-    print 'Content-Type: text/html'
-    print ''
-    print '<html><head>'
-    print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
-    print '<title>%s</title>' % board_name
-    print '</head>'
-    print '<body>'
-    print '[<a href="file:/%s?UpdateLink=on">Update Link</a>]' % cgi_script
-    print '[<a href="file:/%s?CreateNewThread=%s">Create New Thread</a>]' % (
-            cgi_script, bbs)
-    print '<h1>%s</h1>' % board_name
+    print('Content-Type: text/html')
+    print('')
+    print('<html><head>')
+    print('<meta http-equiv="Content-Type" content="text/html;'
+            ' charset=UTF-8">')
+    print('<title>%s</title>' % board_name)
+    print('</head>')
+    print('<body>')
+    print('[<a href="file:/%s?UpdateLink=on">Update Link</a>]' % cgi_script)
+    print('[<a href="file:/%s?CreateNewThread=%s">Create New Thread</a>]' % (
+            cgi_script, bbs))
+    print('<h1>%s</h1>' % board_name)
     thread_list, thread_log = get_sorted_thread_list(thread_list, thread_log,
             sort_type, reverse)
-    print '<table>'
-    print '<tr><td></td>'
+    print('<table>')
+    print('<tr><td></td>')
     for t in ['res', 'num', 'act', 'time']:
         s = 'file:/%s?PrintThreadList=%s' % (cgi_script, bbs)
-        print '<td nowrap align=center>'
-        print '[<a href="%s&sort=%s">+</a>]' % (s, t)
-        print '[<a href="%s&sort=%s&reverse=on">-</a>]' % (s, t)
-        print '</td>'
-    print '</tr>'
+        print('<td nowrap align=center>')
+        print('[<a href="%s&sort=%s">+</a>]' % (s, t))
+        print('[<a href="%s&sort=%s&reverse=on">-</a>]' % (s, t))
+        print('</td>')
+    print('</tr>')
     keys = [x[0] for x in thread_log]
     for x in thread_list:
         old_num = None
         if x[0] in keys:
             old_num = thread_log[keys.index(x[0])][2]
         print_thread_header(bbs, x[0], x[1], x[2], old_num)
-    print '<tr><td colspan=5><hr></td></tr>'
-    print '<tr><td colspan=5><p>Delisted threads</p></td></tr>'
+    print('<tr><td colspan=5><hr></td></tr>')
+    print('<tr><td colspan=5><p>Delisted threads</p></td></tr>')
     keys = [x[0] for x in thread_list]
     for x in thread_log:
         if x[0] not in keys:
             print_thread_header(bbs, x[0], x[1], x[2], retrieve=False)
-    print '</table>'
-    print '</body>'
-    print '</html>'
+    print('</table>')
+    print('</body>')
+    print('</html>')
 
 
 
 def apply_abone(dat, bbs, key):
     abone_file = '%s/abone.cache' % cache_dir
     if os.path.isfile(abone_file):
-        with open(abone_file, 'r') as f:
-            abone_list = cPickle.load(f)
+        with open(abone_file, 'rb') as f:
+            abone_list = pickle.load(f)
     else:
         abone_list = []
     abone_all = [x for x in abone_list if x[0] == '' and x[1] == '']
@@ -346,7 +367,7 @@ def get_reference(dat):
                     stop = int(m.group(2)) + 1
                 else:
                     stop = start + 1
-                for k in xrange(start, stop):
+                for k in range(start, stop):
                     ref[k].append(idx)
     return ref
 
@@ -364,7 +385,7 @@ def get_id_reference(dat):
             if m and not q.search(v[2]):
                 ref[m.group(1)].append(idx)
     id_ref = {}
-    for k, v in ref.iteritems():
+    for k, v in ref.items():
         for idx in v:
             id_ref[idx] = [x for x in v if x != idx]
     return id_ref
@@ -413,7 +434,7 @@ def dat2html(dat, bbs, key):
 def get_dat(url, dat_file, retrieve):
     try:
         with codecs.open(dat_file, 'r', encode_2ch, 'replace') as f:
-            dat = unicode(f.read()).splitlines()
+            dat = f.read().splitlines()
             offset = f.tell()
         old_num = len(dat)
     except:
@@ -421,18 +442,21 @@ def get_dat(url, dat_file, retrieve):
         old_num = 0
     if retrieve:
         try:
-            urllib.urlretrieve(url, dat_file)
+            urlretrieve(url, dat_file)
             with codecs.open(dat_file, 'r', encode_2ch, 'replace') as f:
                 f.seek(0, 2)
                 if f.tell() < offset:
                     f.seek(0)
-                    dat = unicode(f.read()).splitlines()
+                    dat = f.read().splitlines()
                 else:
                     f.seek(offset)
-                    new_dat = unicode(f.read()).splitlines()
+                    new_dat = f.read().splitlines()
                     dat.extend(new_dat)
         except:
-            pass
+            if debug_mode:
+                print('Content-Type: text/plain')
+                print('')
+                traceback.print_exc(file=sys.stdout)
     new_num = len(dat)
     return dat, new_num, old_num
 
@@ -456,75 +480,76 @@ def print_thread(item, retrieve=True):
     dat, new_num, old_num = get_dat('%s/dat/%s.dat' % (url, key), dat_file,
             retrieve)
     if new_num == 0 or dat[0].count('<>') != 4:
-        print 'Content-Type: text/html'
-        print 'w3m-control: MARK_URL'
-        print ''
-        print '<html><body>'
-        print 'Cannot find dat file.<br>'
-        print orig_url
-        print '</body></html>'
+        print('Content-Type: text/html')
+        print('w3m-control: MARK_URL')
+        print('')
+        print('<html><body>')
+        print('Cannot find dat file.<br>')
+        print(orig_url)
+        print('</body></html>')
         return
     thread_name = dat[0].split('<>')[4]
-    print 'Content-Type: text/html'
+    print('Content-Type: text/html')
     if indices:
         m = re.match(r'^([0-9]+)', indices)
         n = re.match(r'^l([0-9]+)', indices)
         if m != None:
-            print 'w3m-control: GOTO #%d' % int(m.group(1))
+            print('w3m-control: GOTO #%d' % int(m.group(1)))
         elif n != None:
-            print 'w3m-control: GOTO #%d' % (new_num - int(n.group(1)))
+            print('w3m-control: GOTO #%d' % (new_num - int(n.group(1))))
         else:
-            print 'w3m-control: GOTO #1'
+            print('w3m-control: GOTO #1')
     elif old_num != new_num:
-        print 'w3m-control: GOTO #%d' % (old_num + 1)
+        print('w3m-control: GOTO #%d' % (old_num + 1))
     else:
-        print 'w3m-control: GOTO #%d' % new_num
-    print 'w3m-control: DELETE_PREVBUF'
-    print 'w3m-control: MARK_URL'
-    print ''
-    print '<html><head>'
-    print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
-    print '<title>%s</title></head>' % thread_name
-    print '<body>'
+        print('w3m-control: GOTO #%d' % new_num)
+    print('w3m-control: DELETE_PREVBUF')
+    print('w3m-control: MARK_URL')
+    print('')
+    print('<html><head>')
+    print('<meta http-equiv="Content-Type" content="text/html;'
+            ' charset=UTF-8">')
+    print('<title>%s</title></head>' % thread_name)
+    print('<body>')
     thread_menu = ('[<a href="file:/%s?PrintThreadList=%s">Thread list</a>]' %
             (cgi_script, bbs))
     thread_menu += ('[<a href="file:/%s?DeleteDat=%s/%s/">Delete dat</a>]' %
             (cgi_script, bbs, key))
-    print thread_menu
-    print '<br><hr>'
-    print '<h1>%s</h1>' % thread_name
-    print '<a href="%s">%s</a><br>' % (orig_url, orig_url)
-    print '<dl>'
+    print(thread_menu)
+    print('<br><hr>')
+    print('<h1>%s</h1>' % thread_name)
+    print('<a href="%s">%s</a><br>' % (orig_url, orig_url))
+    print('<dl>')
     html = dat2html(dat, bbs, key)
     for i,s in enumerate(html):
         if old_num != new_num and i == old_num:
-            print '<p><table width=50% border=5><tr align=center><td>'
-            print '<a name=new>*</a> Newly arriving messages'
-            print '</td></tr></table></p>'
-        print s
-    print '</dl><hr>'
-    print '<a href=#new>Newly arriving messages</a>'
-    print '<hr>'
-    print thread_menu
-    print '<br><br>'
-    print '<form method=POST accept-charset="%s" ' % encode_w3m
-    print 'action="file:/%s">' % cgi_script
-    print '<input type=submit value="Submit" name=submit>'
-    print 'Name<input name=FROM value="%s" size=19>' % default_name
-    print 'E-mail: <input name=mail value="%s" size=19><br>' % default_mail
-    print '<textarea rows=5 cols=70 wrap=off name=MESSAGE></textarea>'
-    print '<input type=hidden name=PostMsg value=on>'
-    print '<input type=hidden name=bbs value=%s>' % bbs
-    print '<input type=hidden name=key value=%s>' % key
-    print '<input type=hidden name=time value=%d>' % int(time.time())
-    print '</form><br><br>'
-    print '</body></html>'
+            print('<p><table width=50% border=5><tr align=center><td>')
+            print('<a name=new>*</a> Newly arriving messages')
+            print('</td></tr></table></p>')
+        print(s)
+    print('</dl><hr>')
+    print('<a href=#new>Newly arriving messages</a>')
+    print('<hr>')
+    print(thread_menu)
+    print('<br><br>')
+    print('<form method=POST accept-charset="%s" ' % encode_w3m)
+    print('action="file:/%s">' % cgi_script)
+    print('<input type=submit value="Submit" name=submit>')
+    print('Name<input name=FROM value="%s" size=19>' % default_name)
+    print('E-mail: <input name=mail value="%s" size=19><br>' % default_mail)
+    print('<textarea rows=5 cols=70 wrap=off name=MESSAGE></textarea>')
+    print('<input type=hidden name=PostMsg value=on>')
+    print('<input type=hidden name=bbs value=%s>' % bbs)
+    print('<input type=hidden name=key value=%s>' % key)
+    print('<input type=hidden name=time value=%d>' % int(time.time()))
+    print('</form><br><br>')
+    print('</body></html>')
     thread_log = get_thread_list(bbs, None)
     thread_log = [x for x in thread_log if x[0] != key]
     thread_log.insert(0, (key, thread_name, new_num))
     cache_file = '%s/subject.cache' % bbs_dir
-    with open(cache_file, 'w') as f:
-        cPickle.dump(thread_log, f)
+    with open(cache_file, 'wb') as f:
+        pickle.dump(thread_log, f)
 
 
 
@@ -538,9 +563,9 @@ def delete_dat(item):
     if os.path.isfile(cache_file):
         thread_log = get_thread_list(bbs, None)
         thread_log = [x for x in thread_log if x[0] != key]
-        with open(cache_file, 'w') as f:
-            cPickle.dump(thread_log, f)
-    print 'w3m-control: BACK'
+        with open(cache_file, 'wb') as f:
+            pickle.dump(thread_log, f)
+    print('w3m-control: BACK')
 
 
 
@@ -579,8 +604,8 @@ def query2abone(query, abone_list=None):
 def print_abone(query):
     abone_file = '%s/abone.cache' % cache_dir
     if os.path.isfile(abone_file):
-        with open(abone_file, 'r') as f:
-            abone_list = cPickle.load(f)
+        with open(abone_file, 'rb') as f:
+            abone_list = pickle.load(f)
     else:
         abone_list = []
     if 'Abone' in query and query['Abone'] == 'new':
@@ -602,33 +627,37 @@ def print_abone(query):
                     n = int(idx) - 1
                     f, m, i, msg = tuple(dat[n].split('<>')[0:4])
                 except:
-                    pass
-    print 'Content-Type: text/html'
+                    if debug_mode:
+                        print('Content-Type: text/plain')
+                        print('')
+                        traceback.print_exc(file=sys.stdout)
+    print('Content-Type: text/html')
     if 'Abone' not in query or query['Abone'] != 'new':
-        print 'w3m-control: DELETE_PREVBUF'
-    print ''
-    print '<html><head>'
-    print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
-    print '<title>Abone Template Setup</title></head>'
-    print '<body>'
-    print '<h1>Abone Template Setup</h1>'
-    print '<form method=POST accept-charset="%s" ' % encode_w3m
-    print 'action="file:///cgi-bin/w3m-2chpy.cgi">'
-    print '<table>'
-    print '<tr><td>Res:</td>'
-    print '<td><input name=idx value="%s" size=70></td></tr>' % (idx if idx
-            else '')
-    print '<tr><td>FROM:</td>'
-    print '<td><input name=FROM value="%s" size=70></td></tr>' % f
-    print '<tr><td>Mail:</td>'
-    print '<td><input name=mail value="%s" size=70></td></tr>' % m
-    print '<tr><td>Time & ID:</td>'
-    print '<td><input name=id value="%s" size=70></td></tr>' % i
-    print '<tr><td>Message:</td>'
-    print '<td><textarea rows=5 cols=70 wrap=off name=MESSAGE>%s' % msg
-    print '</textarea>'
-    print '</td></tr>'
-    print '<tr><td>Scope:</td><td><select name=scope>'
+        print('w3m-control: DELETE_PREVBUF')
+    print('')
+    print('<html><head>')
+    print('<meta http-equiv="Content-Type" content="text/html;'
+            ' charset=UTF-8">')
+    print('<title>Abone Template Setup</title></head>')
+    print('<body>')
+    print('<h1>Abone Template Setup</h1>')
+    print('<form method=POST accept-charset="%s" ' % encode_w3m)
+    print('action="file:///cgi-bin/w3m-2chpy.cgi">')
+    print('<table>')
+    print('<tr><td>Res:</td>')
+    print('<td><input name=idx value="%s" size=70></td></tr>' % (idx if idx
+            else ''))
+    print('<tr><td>FROM:</td>')
+    print('<td><input name=FROM value="%s" size=70></td></tr>' % f)
+    print('<tr><td>Mail:</td>')
+    print('<td><input name=mail value="%s" size=70></td></tr>' % m)
+    print('<tr><td>Time & ID:</td>')
+    print('<td><input name=id value="%s" size=70></td></tr>' % i)
+    print('<tr><td>Message:</td>')
+    print('<td><textarea rows=5 cols=70 wrap=off name=MESSAGE>%s' % msg)
+    print('</textarea>')
+    print('</td></tr>')
+    print('<tr><td>Scope:</td><td><select name=scope>')
     scope = [('', 'All')]
     if bbs:
         scope.append((bbs, board_name))
@@ -636,16 +665,17 @@ def print_abone(query):
             scope.append(('%s/%s' % (bbs, key), thread_name))
     scope.reverse()
     for s in scope:
-        print '<option value="%s">%s' % (s[0], s[1])
-    print '</select></td></tr>'
-    print '<tr><td></td>'
-    print '<td align=right><input type=submit value="Add" name=submit></td></tr>'
-    print '</table>'
+        print('<option value="%s">%s' % (s[0], s[1]))
+    print('</select></td></tr>')
+    print('<tr><td></td>')
+    print('<td align=right><input type=submit value="Add" name=submit>')
+    print('</td></tr>')
+    print('</table>')
     if 'sha1' in query:
-        print '<input type=hidden name=sha1 value=%s>' % query['sha1']
-    print '<input type=hidden name=Abone value=add>'
-    print '</form><br><br>'
-    print '<table>'
+        print('<input type=hidden name=sha1 value=%s>' % query['sha1'])
+    print('<input type=hidden name=Abone value=add>')
+    print('</form><br><br>')
+    print('<table>')
     for n, abone in enumerate(abone_list):
         bbs, key, idx, f, m, i, msg = abone
         if bbs and key:
@@ -660,22 +690,25 @@ def print_abone(query):
             scope = ''
             scope_name = 'All'
         ha = abone2hash(abone)
-        print '<tr>'
-        print '<td nowrap>'
-        print '[<a href="file:/%s?Abone=del&sha1=%s">D</a>]' % (cgi_script, ha)
-        print '[<a href="file:/%s?Abone=mod&sha1=%s">E</a>]' % (cgi_script, ha)
-        print '</td>'
-        print '<td nowrap>Scope:</td><td nowrap colspan=7>%s</td>' % scope_name
-        print '</tr><td></td>'
-        print '<td nowrap>Res:</td><td nowrap>%s</td>' % idx
-        print '<td nowrap>FROM:</td><td nowrap>%s</td>' % f
-        print '<td nowrap>Mail:</td><td nowrap>%s</td>' % m
-        print '<td nowrap>Time & ID:</td><td nowrap>%s</td>' % i
-        print '</tr><tr><td nowrap></td><td nowrap>Message:</td>'
-        print '<td nowrap colspan=7>%s</td>' % msg
-        print '</tr>'
-    print '</table>'
-    print '</body></html>'
+        print('<tr>')
+        print('<td nowrap>')
+        print('[<a href="file:/%s?Abone=del&sha1=%s">D</a>]' %
+                (cgi_script, ha))
+        print('[<a href="file:/%s?Abone=mod&sha1=%s">E</a>]' %
+                (cgi_script, ha))
+        print('</td>')
+        print('<td nowrap>Scope:</td><td nowrap colspan=7>%s</td>' %
+                scope_name)
+        print('</tr><td></td>')
+        print('<td nowrap>Res:</td><td nowrap>%s</td>' % idx)
+        print('<td nowrap>FROM:</td><td nowrap>%s</td>' % f)
+        print('<td nowrap>Mail:</td><td nowrap>%s</td>' % m)
+        print('<td nowrap>Time & ID:</td><td nowrap>%s</td>' % i)
+        print('</tr><tr><td nowrap></td><td nowrap>Message:</td>')
+        print('<td nowrap colspan=7>%s</td>' % msg)
+        print('</tr>')
+    print('</table>')
+    print('</body></html>')
 
 
 
@@ -689,15 +722,15 @@ def add_abone(query):
     abone = (bbs, key, idx, f, m, i, msg)
     abone_file = '%s/abone.cache' % cache_dir
     if os.path.isfile(abone_file):
-        with open(abone_file, 'r') as f:
-            abone_list = cPickle.load(f)
+        with open(abone_file, 'rb') as f:
+            abone_list = pickle.load(f)
     else:
         abone_list = []
     if 'sha1' in query:
         hash2abone(query['sha1'], abone_list)
     abone_list.insert(0, abone)
-    with open(abone_file, 'w') as f:
-        cPickle.dump(abone_list, f)
+    with open(abone_file, 'wb') as f:
+        pickle.dump(abone_list, f)
     print_abone({})
 
 
@@ -706,13 +739,13 @@ def delete_abone(query):
     ha = query['sha1']
     abone_file = '%s/abone.cache' % cache_dir
     if os.path.isfile(abone_file):
-        with open(abone_file, 'r') as f:
-            abone_list = cPickle.load(f)
+        with open(abone_file, 'rb') as f:
+            abone_list = pickle.load(f)
     else:
         abone_list = []
     hash2abone(ha, abone_list)
-    with open(abone_file, 'w') as f:
-        cPickle.dump(abone_list, f)
+    with open(abone_file, 'wb') as f:
+        pickle.dump(abone_list, f)
     print_abone({})
 
 
@@ -723,23 +756,29 @@ def print_headline(h_type='news'):
     elif h_type == 'live':
         url = '%s/bbylive/' % headline_url
     try:
-        urllib.urlretrieve(url, headline_file)
+        urlretrieve(url, headline_file)
         with codecs.open(headline_file, 'r', encode_2ch, 'replace') as f:
-            html = unicode(f.read())
+            html = f.read()
     except:
-        print 'w3m-control: GOTO %s' % url
-        print 'w3m-control: DELETE_PREVBUF'
+        if debug_mode:
+            print('Content-Type: text/plain')
+            print('')
+            traceback.print_exc(file=sys.stdout)
+        print('w3m-control: GOTO %s' % url)
+        print('w3m-control: DELETE_PREVBUF')
         return
     p = re.compile(r'^(\t|<)')
     q = re.compile(r'(.*)<a href=' + r_thread_url + r'\/([^ ]*)>(.*)')
-    print 'Content-Type: text/html'
-    print ''
-    print '<html><head>'
-    print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
-    print '</head>'
-    print '<body>'
-    print '[<a href="file:/%s?UpdateLink=on">Update Link</a>]<br>' % cgi_script
-    print '<table>'
+    print('Content-Type: text/html')
+    print('')
+    print('<html><head>')
+    print('<meta http-equiv="Content-Type" content="text/html;'
+            ' charset=UTF-8">')
+    print('</head>')
+    print('<body>')
+    print('[<a href="file:/%s?UpdateLink=on">Update Link</a>]<br>' %
+            cgi_script)
+    print('<table>')
     for line in html.splitlines():
         if not p.match(line):
             m = q.match(line)
@@ -747,48 +786,53 @@ def print_headline(h_type='news'):
                 time = m.group(1)
                 item = m.group(2)
                 title = m.group(3)
-                print '<tr>'
-                print '<td nowrap>%s</td>' % time
-                print ('<td nowrap><a href="file:/%s?PrintThread=%s">' %
-                        (cgi_script, item))
-                print '%s</a><td>' % title
-                print '</tr>'
-    print '</table>'
-    print '</body></html>'
+                print('<tr>')
+                print('<td nowrap>%s</td>' % time)
+                print(('<td nowrap><a href="file:/%s?PrintThread=%s">' %
+                        (cgi_script, item)))
+                print('%s</a><td>' % title)
+                print('</tr>')
+    print('</table>')
+    print('</body></html>')
 
 
 
 def update_link():
-    urllib.urlretrieve(bbsmenu_url, bbsmenu_file)
-    print 'w3m-control: BACK'
+    urlretrieve(bbsmenu_url, bbsmenu_file)
+    print('w3m-control: BACK')
 
 
 
 def create_new_thread(bbs):
-    print 'Content-Type: text/html'
-    print ''
-    print '<html><head>'
-    print '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
-    print '<title>%s</title></head>' % bbs
-    print '<body>'
-    print '<form method=POST accept-charset="%s" ' % encode_w3m
-    print 'action="file:/%s">' % cgi_script
-    print 'Title: <input type=text name="subject" size="40"><br>'
-    print 'Name: <input name=FROM value="%s" size=19>' % default_name
-    print 'E-mail: <input name=mail value="%s" size=19><br>' % default_mail
-    print '<textarea rows=5 cols=70 wrap=off name=MESSAGE></textarea><br>'
-    print u'<input type=submit value="新規スレッド作成" name=submit>'
-    print '<input type=hidden name=PostMsg value=on>'
-    print '<input type=hidden name=bbs value=%s>' % bbs
-    print '<input type=hidden name=time value=%d>' % int(time.time())
-    print '</form>'
-    print '</body></html>'
+    print('Content-Type: text/html')
+    print('')
+    print('<html><head>')
+    print('<meta http-equiv="Content-Type" content="text/html;'
+            ' charset=UTF-8">')
+    print('<title>%s</title></head>' % bbs)
+    print('<body>')
+    print('<form method=POST accept-charset="%s" ' % encode_w3m)
+    print('action="file:/%s">' % cgi_script)
+    print('Title: <input type=text name="subject" size="40"><br>')
+    print('Name: <input name=FROM value="%s" size=19>' % default_name)
+    print('E-mail: <input name=mail value="%s" size=19><br>' % default_mail)
+    print('<textarea rows=5 cols=70 wrap=off name=MESSAGE></textarea><br>')
+    if sys.version_info >= (3, 0):
+        print('<input type=submit value="新規スレッド作成" name=submit>')
+    else:
+        print(u'<input type=submit value="新規スレッド作成" name=submit>')
+    #print('<input type=submit value="Create New Thread" name=submit>')
+    print('<input type=hidden name=PostMsg value=on>')
+    print('<input type=hidden name=bbs value=%s>' % bbs)
+    print('<input type=hidden name=time value=%d>' % int(time.time()))
+    print('</form>')
+    print('</body></html>')
 
 
 
-class InputHiddenParser(HTMLParser.HTMLParser):
+class InputHiddenParser(HTMLParser):
     def __init__(self):
-        HTMLParser.HTMLParser.__init__(self)
+        HTMLParser.__init__(self)
         self.query = {}
 
     def handle_starttag(self, tag, attrs):
@@ -805,7 +849,7 @@ class InputHiddenParser(HTMLParser.HTMLParser):
 
 
 
-class MyCookieJar(cookielib.CookieJar):
+class MyCookieJar(CookieJar):
     def __getstate__(self):
         state = self.__dict__.copy()
         del state['_cookies_lock']
@@ -830,23 +874,23 @@ def post_msg(query):
         key = None
         referer = base_url + 'test/read.cgi/%s/' % bbs
     url = base_url + 'test/bbs.cgi'
-    for k, v in query.iteritems():
-        query[k] = v.encode(encode_2ch)
+    for k, v in query.items():
         if k == 'MESSAGE':
-            query[k] = query[k].replace(' ', '&nbsp;').strip()
-    encoded_query = urllib.urlencode(query)
+            v = v.replace(' ', '&nbsp;').strip()
+        query[k] = v.encode(encode_2ch)
+    encoded_query = urlencode(query).encode(encode_2ch)
     if 'MESSAGE' not in query:
-        print 'Content-Type: text/plain'
-        print ''
-        print 'Message is empty.'
+        print('Content-Type: text/plain')
+        print('')
+        print('Message is empty.')
     else:
         if os.path.isfile(cookie_file):
-            with open(cookie_file, 'r') as f:
-                cj = cPickle.load(f)
+            with open(cookie_file, 'rb') as f:
+                cj = pickle.load(f)
         else:
             cj = MyCookieJar()
-        opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-        req = urllib2.Request(url, encoded_query)
+        opener = build_opener(HTTPCookieProcessor(cj))
+        req = Request(url, encoded_query)
         req.add_header("Referer", referer)
         req.add_header("User-agent", user_agent)
         res = opener.open(req)
@@ -855,23 +899,23 @@ def post_msg(query):
         parser.feed(html)
         parser.close()
         if len(parser.query) > 0:
-            for k, v in parser.query.iteritems():
+            for k, v in parser.query.items():
                 if k not in query:
                     query[k] = v.encode(encode_2ch)
-            encoded_query = urllib.urlencode(query)
-            req = urllib2.Request(url, encoded_query)
+            encoded_query = urlencode(query).encode(encode_2ch)
+            req = Request(url, encoded_query)
             req.add_header("Referer", referer)
             req.add_header("User-agent", user_agent)
             res = opener.open(req)
             html = res.read().decode(encode_2ch, 'replace')
-        with open(cookie_file, 'w') as f:
-            cj = cPickle.dump(cj, f)
+        with open(cookie_file, 'wb') as f:
+            cj = pickle.dump(cj, f)
         if key:
             item = '%s/%s/' % (bbs, key)
             print_thread(item)
         else:
             print_thread_list(bbs)
-        #print html
+        #print(html)
 
 
 
@@ -885,41 +929,36 @@ def main():
         else:
             query = {}
         q = {}
-        for k, v in query.iteritems():
-            q[k] = v[0].decode(encode_w3m, 'replace')
+        for k, v in query.items():
+            if not sys.version_info >= (3, 0):
+                v[0] = v[0].decode(encode_w3m, 'replace')
+            q[k] = cgi.escape(v[0])
         query = q
         if query:
             if 'PrintBoardList' in query:
-                if cgi.escape(query['PrintBoardList']) == 'reload':
+                if query['PrintBoardList'] == 'reload':
                     get_bbsmenu(retrieve=True)
                 print_board_list()
             elif 'PrintThreadList' in query:
-                bbs = cgi.escape(query['PrintThreadList'])
-                sort_type = (cgi.escape(query['sort']) if 'sort' in query else
-                        None)
-                reverse = (cgi.escape(query['reverse']) if 'reverse' in query
-                        else None)
+                bbs = query['PrintThreadList']
+                sort_type = query['sort'] if 'sort' in query else None
+                reverse = query['reverse'] if 'reverse' in query else None
                 print_thread_list(bbs, sort_type, reverse)
             elif 'PrintThread' in query:
-                item = cgi.escape(query['PrintThread'])
-                print_thread(item)
+                print_thread(query['PrintThread'])
             elif 'PrintThreadLog' in query:
-                item = cgi.escape(query['PrintThreadLog'])
-                print_thread(item, retrieve=False)
+                print_thread(query['PrintThreadLog'], retrieve=False)
             elif 'DeleteDat' in query:
-                item = cgi.escape(query['DeleteDat'])
-                delete_dat(item)
+                delete_dat(query['DeleteDat'])
             elif 'PrintHeadLine' in query:
-                h_type = cgi.escape(query['PrintHeadLine'])
-                if h_type == 'NEWS':
+                if query['PrintHeadLine'] == 'NEWS':
                     print_headline()
-                elif h_type == 'LIVE':
+                elif query['PrintHeadLine'] == 'LIVE':
                     print_headline(h_type='live')
             elif 'UpdateLink' in query:
                 update_link()
             elif 'CreateNewThread' in query:
-                bbs = cgi.escape(query['CreateNewThread'])
-                create_new_thread(bbs)
+                create_new_thread(query['CreateNewThread'])
             elif 'PostMsg' in query:
                 post_msg(query)
             elif 'Abone' in query:
@@ -930,8 +969,8 @@ def main():
                 elif query['Abone'] == 'del':
                     delete_abone(query)
     except:
-        print 'Content-Type: text/plain'
-        print ''
+        print('Content-Type: text/plain')
+        print('')
         traceback.print_exc(file=sys.stdout)
 
 

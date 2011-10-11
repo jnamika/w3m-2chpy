@@ -4,7 +4,7 @@ w3m-2ch.cgi (http://www.geocities.jp/smug5680/) の代替を目指して開発�
 
 === 動作環境 ===
 w3m (Local CGI 機能付き)
-Python (ver 2.5.2 以上。Python3には未対応)
+Python (ver 2.7 または 3.2 以上)
 
 
 === インストール ===
