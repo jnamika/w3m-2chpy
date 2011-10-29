@@ -817,11 +817,7 @@ def create_new_thread(bbs):
     print('Name: <input name=FROM value="%s" size=19>' % default_name)
     print('E-mail: <input name=mail value="%s" size=19><br>' % default_mail)
     print('<textarea rows=5 cols=70 wrap=off name=MESSAGE></textarea><br>')
-    if sys.version_info >= (3, 0):
-        print('<input type=submit value="新規スレッド作成" name=submit>')
-    else:
-        print(u'<input type=submit value="新規スレッド作成" name=submit>')
-    #print('<input type=submit value="Create New Thread" name=submit>')
+    print('<input type=submit value="Create New Thread" name=submit>')
     print('<input type=hidden name=PostMsg value=on>')
     print('<input type=hidden name=bbs value=%s>' % bbs)
     print('<input type=hidden name=time value=%d>' % int(time.time()))
@@ -919,6 +915,43 @@ def post_msg(query):
 
 
 
+def select_action(query):
+    if 'PrintBoardList' in query:
+        if query['PrintBoardList'] == 'reload':
+            get_bbsmenu(retrieve=True)
+        print_board_list()
+    elif 'PrintThreadList' in query:
+        bbs = query['PrintThreadList']
+        sort_type = query['sort'] if 'sort' in query else None
+        reverse = query['reverse'] if 'reverse' in query else None
+        print_thread_list(bbs, sort_type, reverse)
+    elif 'PrintThread' in query:
+        print_thread(query['PrintThread'])
+    elif 'PrintThreadLog' in query:
+        print_thread(query['PrintThreadLog'], retrieve=False)
+    elif 'DeleteDat' in query:
+        delete_dat(query['DeleteDat'])
+    elif 'PrintHeadLine' in query:
+        if query['PrintHeadLine'] == 'NEWS':
+            print_headline()
+        elif query['PrintHeadLine'] == 'LIVE':
+            print_headline(h_type='live')
+    elif 'UpdateLink' in query:
+        update_link()
+    elif 'CreateNewThread' in query:
+        create_new_thread(query['CreateNewThread'])
+    elif 'PostMsg' in query:
+        post_msg(query)
+    elif 'Abone' in query:
+        if query['Abone'] == 'new' or query['Abone'] == 'mod':
+            print_abone(query)
+        elif query['Abone'] == 'add':
+            add_abone(query)
+        elif query['Abone'] == 'del':
+            delete_abone(query)
+
+
+
 def main():
     try:
         if 'QUERY_STRING' in os.environ:
@@ -935,39 +968,7 @@ def main():
             q[k] = cgi.escape(v[0])
         query = q
         if query:
-            if 'PrintBoardList' in query:
-                if query['PrintBoardList'] == 'reload':
-                    get_bbsmenu(retrieve=True)
-                print_board_list()
-            elif 'PrintThreadList' in query:
-                bbs = query['PrintThreadList']
-                sort_type = query['sort'] if 'sort' in query else None
-                reverse = query['reverse'] if 'reverse' in query else None
-                print_thread_list(bbs, sort_type, reverse)
-            elif 'PrintThread' in query:
-                print_thread(query['PrintThread'])
-            elif 'PrintThreadLog' in query:
-                print_thread(query['PrintThreadLog'], retrieve=False)
-            elif 'DeleteDat' in query:
-                delete_dat(query['DeleteDat'])
-            elif 'PrintHeadLine' in query:
-                if query['PrintHeadLine'] == 'NEWS':
-                    print_headline()
-                elif query['PrintHeadLine'] == 'LIVE':
-                    print_headline(h_type='live')
-            elif 'UpdateLink' in query:
-                update_link()
-            elif 'CreateNewThread' in query:
-                create_new_thread(query['CreateNewThread'])
-            elif 'PostMsg' in query:
-                post_msg(query)
-            elif 'Abone' in query:
-                if query['Abone'] == 'new' or query['Abone'] == 'mod':
-                    print_abone(query)
-                elif query['Abone'] == 'add':
-                    add_abone(query)
-                elif query['Abone'] == 'del':
-                    delete_abone(query)
+            select_action(query)
     except:
         print('Content-Type: text/plain')
         print('')
