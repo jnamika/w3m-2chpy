@@ -8,6 +8,7 @@ import traceback
 import re
 import collections
 import cgi
+import cgitb; cgitb.enable()
 import time
 if sys.version_info >= (3, 0):
     from html.parser import HTMLParser
@@ -52,6 +53,14 @@ else:
 
 if not os.path.isdir(cache_dir):
     os.mkdir(cache_dir)
+
+
+
+def debug_print():
+    if debug_mode:
+        print('Content-Type: text/plain')
+        print('')
+        traceback.print_exc(file=sys.stdout)
 
 
 
@@ -106,10 +115,7 @@ def get_bbsmenu(retrieve=False):
         parser.close()
         return parser.categories, parser.links
     except:
-        if debug_mode:
-            print('Content-Type: text/plain')
-            print('')
-            traceback.print_exc(file=sys.stdout)
+        debug_print()
         return [],[]
 
 
@@ -128,6 +134,8 @@ def get_board_url(bbs, links):
 
 def print_board_list():
     categories, links = get_bbsmenu()
+    columns = 5
+    p = re.compile(r_thread_list_url + r'\/([^ ]*)\/')
     print('Content-Type: text/html')
     print('')
     print('<html><head>')
@@ -137,7 +145,6 @@ def print_board_list():
     print('<body>')
     print('[<a href="file:/%s?PrintBoardList=reload">'
             'Reload BoardList</a>]<br>' % cgi_script)
-    columns = 5
     print('<table><tr><td colspan=%d>' % columns)
     print('Click to jump to each of the categories.')
     print('</td></tr><tr>')
@@ -146,7 +153,6 @@ def print_board_list():
             print('</tr><tr>')
         print('<td><a href=#%d>%s</a></td>' % (idx, item))
     print('</tr></table><hr>')
-    p = re.compile(r_thread_list_url + r'\/([^ ]*)\/')
     for idx, item in enumerate(categories):
         print('<table>')
         print('<tr><td colspan=%d>' % columns)
@@ -205,10 +211,7 @@ def get_thread_list(bbs, url=None):
                         thread_name = s[0].split('<>')[4]
                         thread_list.append((key, thread_name, len(s)))
                 except:
-                    if debug_mode:
-                        print('Content-Type: text/plain')
-                        print('')
-                        traceback.print_exc(file=sys.stdout)
+                    debug_print()
             if not os.path.isdir(bbs_dir):
                 os.mkdir(bbs_dir)
             with open(cache_file, 'wb') as f:
@@ -363,10 +366,7 @@ def get_reference(dat):
             m = p.match(x)
             if m:
                 start = int(m.group(1))
-                if m.group(2):
-                    stop = int(m.group(2)) + 1
-                else:
-                    stop = start + 1
+                stop = int(m.group(2)) + 1 if m.group(2) else start + 1
                 for k in range(start, stop):
                     ref[k].append(idx)
     return ref
@@ -453,10 +453,7 @@ def get_dat(url, dat_file, retrieve):
                     new_dat = f.read().splitlines()
                     dat.extend(new_dat)
         except:
-            if debug_mode:
-                print('Content-Type: text/plain')
-                print('')
-                traceback.print_exc(file=sys.stdout)
+            debug_print()
     new_num = len(dat)
     return dat, new_num, old_num
 
@@ -627,10 +624,7 @@ def print_abone(query):
                     n = int(idx) - 1
                     f, m, i, msg = tuple(dat[n].split('<>')[0:4])
                 except:
-                    if debug_mode:
-                        print('Content-Type: text/plain')
-                        print('')
-                        traceback.print_exc(file=sys.stdout)
+                    debug_print()
     print('Content-Type: text/html')
     if 'Abone' not in query or query['Abone'] != 'new':
         print('w3m-control: DELETE_PREVBUF')
@@ -760,10 +754,7 @@ def print_headline(h_type='news'):
         with codecs.open(headline_file, 'r', encode_2ch, 'replace') as f:
             html = f.read()
     except:
-        if debug_mode:
-            print('Content-Type: text/plain')
-            print('')
-            traceback.print_exc(file=sys.stdout)
+        debug_print()
         print('w3m-control: GOTO %s' % url)
         print('w3m-control: DELETE_PREVBUF')
         return
@@ -783,9 +774,7 @@ def print_headline(h_type='news'):
         if not p.match(line):
             m = q.match(line)
             if m != None:
-                time = m.group(1)
-                item = m.group(2)
-                title = m.group(3)
+                time, item, title = m.group(1, 2, 3)
                 print('<tr>')
                 print('<td nowrap>%s</td>' % time)
                 print(('<td nowrap><a href="file:/%s?PrintThread=%s">' %
